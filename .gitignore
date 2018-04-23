@@ -1,3 +1,4 @@
+**/core
 
 **/*.rs.bk
 Cargo.lock

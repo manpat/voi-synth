@@ -32,9 +32,9 @@ impl Window {
 		unsafe {
 			ensure!(SDL_Init(SDL_INIT_EVERYTHING) == 0, "SDL Init failed");
 
-			let (window_width, window_height) = (800, 600);
+			let (window_width, window_height) = (200, 200);
 
-			let sdl_window = SDL_CreateWindow(cstr!("Voi"), 
+			let sdl_window = SDL_CreateWindow(cstr!("voi-synth testbed"), 
 				SDL_WINDOWPOS_UNDEFINED_MASK as i32, SDL_WINDOWPOS_UNDEFINED_MASK as i32, 
 				window_width, window_height, 0);
 
