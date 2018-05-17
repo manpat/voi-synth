@@ -7,6 +7,8 @@ use buffer::Buffer;
 
 use failure::err_msg;
 
+use lerp;
+
 pub struct Context {
 	shared_context: Arc<Mutex<SharedContext>>,
 
@@ -21,39 +23,15 @@ impl Context {
 		let (ready_buffer_tx, ready_buffer_rx) = sync_channel::<Buffer>(16);
 
 		let shared_context = Arc::new(Mutex::new(SharedContext::new()));
-		{
-			let mut ctx = shared_context.lock().unwrap();
-			let freqs = [
-				55.0, 56.0, 57.0,
-				110.0, 110.1, 110.2, 110.3,
-				220.0, 220.5,
-				220.0 * 3.0/4.0,
-				220.1 * 3.0/4.0,
-				220.2 * 3.0/4.0,
-				220.3 * 3.0/4.0,
-				330.2, 330.9, 331.1,
-				331.2, 331.9, 332.1,
-				440.0, 440.3, 440.7,
-				550.0, 550.3, 550.7,
-				660.0, 660.3, 660.7,
-				770.0, 770.3, 770.7,
-				880.0, 880.3, 880.7,
-			];
-
-			for &f in freqs.iter() {
-				ctx.synths.push(Synth::with_freq(f));
-			}
-		}
-
 		let evaluation_thread = {
 			let shared_context = shared_context.clone();
 
 			spawn(move || {
 				for mut buffer in queued_buffer_rx.iter() {
-					let mut ctx = shared_context.lock().map_err(
-						|_| err_msg("Failed to lock shared context in evaluation thread"))?;
+					shared_context.lock().map_err(
+						|_| err_msg("Failed to lock shared context in evaluation thread"))?
+						.fill_buffer(&mut buffer);
 
-					ctx.fill_buffer(&mut buffer);
 					ready_buffer_tx.send(buffer)?;
 				}
 	
@@ -70,7 +48,34 @@ impl Context {
 		}
 	}
 
-	pub fn init_buffer_queue(&mut self, buffer_size: usize, buffer_count: usize) -> SynthResult<()> {
+	pub fn dump_stats(&self) {
+		let ctx = self.shared_context.lock().unwrap();
+
+		let max_micros_per_buffer = 1024.0 / ctx.evaluation_ctx.sample_rate * 100000.0;
+
+		println!("fill time: {:5.0}μs / {} synths = {:3.2}μs/synth   (limit: {:5.0}μs, rem:{:5.0}μs)    dc: {:1.6}, env: {}",
+			ctx.average_fill_time,
+			ctx.synths.len(),
+			ctx.average_fill_time / ctx.synths.len() as f32,
+			max_micros_per_buffer,
+			max_micros_per_buffer - ctx.average_fill_time,
+			ctx.signal_dc, ctx.envelope);
+	}
+
+	pub fn push_synth(&self, mut synth: Synth) -> SynthResult<u32> {
+		let mut ctx = self.shared_context.lock().unwrap();
+
+		let id = ctx.synths.len() as u32;
+		synth.id = id;
+		ctx.synths.push(synth);
+		Ok(id)
+	}
+
+	pub fn set_sample_rate(&self, sample_rate: f32) {
+		self.shared_context.lock().unwrap().evaluation_ctx.sample_rate = sample_rate;
+	}
+
+	pub fn init_buffer_queue(&self, buffer_size: usize, buffer_count: usize) -> SynthResult<()> {
 		for _ in 0..buffer_count {
 			self.queued_buffer_tx.send(Buffer::new(buffer_size))?;
 		}
@@ -78,30 +83,52 @@ impl Context {
 		Ok(())
 	}
 
-	pub fn get_ready_buffer(&mut self) -> SynthResult<Buffer> {
+	pub fn get_ready_buffer(&self) -> SynthResult<Buffer> {
 		Ok(self.ready_buffer_rx.recv()?)
 	}
 
-	pub fn queue_empty_buffer(&mut self, buffer: Buffer) -> SynthResult<()> {
+	pub fn queue_empty_buffer(&self, buffer: Buffer) -> SynthResult<()> {
 		Ok(self.queued_buffer_tx.send(buffer)?)
 	}
 }
 
 
+pub struct EvaluationContext {
+	pub sample_rate: f32,
+
+	pub sample_arena: Vec<f32>,
+
+	// Wavetables
+}
+
+
+
 struct SharedContext {
 	synths: Vec<Synth>,
+	// interpolators: Vec<Interpolator>,
+	// command_rx: Reciever<SynthCommand>,
+
 	envelope: f32,
 	signal_dc: f32,
+
+	evaluation_ctx: EvaluationContext,
 
 	average_fill_time: f32,
 }
 
 impl SharedContext {
 	fn new() -> Self {
+		// Init wavetables
+
 		SharedContext {
 			synths: Vec::new(),
-			envelope: 0.0,
+			envelope: 1000.0,
 			signal_dc: 0.0,
+
+			evaluation_ctx: EvaluationContext {
+				sample_rate: 22050.0,
+				sample_arena: Vec::new(),
+			},
 
 			average_fill_time: 0.0,
 		}
@@ -115,12 +142,13 @@ impl SharedContext {
 		buffer.clear();
 
 		for synth in self.synths.iter_mut() {
-			synth.evaluate_into_buffer(buffer);
+			synth.evaluate_into_buffer(buffer, &mut self.evaluation_ctx);
 		}
 
-		let sample_rate = 22050.0;
 		const ATTACK_TIME: f32  = 5.0 / 1000.0;
 		const RELEASE_TIME: f32 = 200.0 / 1000.0;
+
+		let sample_rate = self.evaluation_ctx.sample_rate;
 
 		let attack  = 1.0 - (-1.0 / (ATTACK_TIME * sample_rate)).exp();
 		let release = 1.0 - (-1.0 / (RELEASE_TIME * sample_rate)).exp();
@@ -138,20 +166,12 @@ impl SharedContext {
 			}
 
 			self.envelope = self.envelope.max(1.0);
-			*v = (sample*0.7/self.envelope).max(-1.0).min(1.0);
+			*v = (sample*0.6/self.envelope).max(-1.0).min(1.0);
 		}
 
 		let end = time::Instant::now();
 		let diff = (end-begin).subsec_nanos() as f32 / 1000.0;
 
 		self.average_fill_time = lerp(self.average_fill_time, diff, 0.01);
-
-		println!("fill time: {:5.0}μs (avg {:5.0}μs, {:3.0}μs/synth)",
-			diff, self.average_fill_time,
-			self.average_fill_time / self.synths.len() as f32);
 	}
-}
-
-fn lerp(from: f32, to: f32, amt: f32) -> f32 {
-	from + (to-from) * amt
 }
