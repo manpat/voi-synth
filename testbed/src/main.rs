@@ -1,4 +1,5 @@
 #![feature(box_syntax)]
+#![feature(nll)]
 
 extern crate voi_synth;
 extern crate sdl2_sys as sdl;
@@ -67,37 +68,86 @@ fn main() {
 	// 	}
 	// }
 
+	// {
+	// 	let mut synth = Synth::new();
+	// 	synth.set_gain(0.3);
+
+	// 	let feedback = synth.new_value_store();
+
+	// 	let lfo_osc = synth.new_sine(1.0/3.4);
+	// 	let lfo = synth.new_multiply(lfo_osc, 2.0);
+
+	// 	let freq = synth.new_add(lfo, 110.0);
+	// 	let freq_2 = synth.new_multiply(freq, 3.02 / 2.0);
+	// 	let freq_bass = synth.new_multiply(freq, 1.0/2.0);
+
+	// 	let feedback_add = synth.new_multiply(freq, feedback);
+	// 	let a = synth.new_saw(feedback_add);
+	// 	let b = synth.new_saw(freq_2);
+	// 	let c = synth.new_add(a, b);
+
+	// 	let bass = synth.new_sine(freq_bass);
+
+	// 	let wobble_osc = synth.new_sine(6.0);
+	// 	let wobble = synth.new_remap(wobble_osc, -1.0, 1.0,  0.0, 1.0);
+	// 	let wobble = synth.new_power(wobble, 5.0);
+	// 	let wobble_freq = synth.new_remap(wobble, 0.0, 1.0,  600.0, 20000.0);
+
+	// 	let lp = synth.new_lowpass(c, wobble_freq);
+	// 	let lp = synth.new_lowpass(lp, wobble_freq);
+	// 	let lp = synth.new_lowpass(lp, wobble_freq);
+	// 	let lp = synth.new_lowpass(lp, wobble_freq);
+
+	// 	let lfo_vc = synth.new_remap(wobble_osc, -1.0, 1.0,  0.8, 1.2);
+	// 	let feedback_mul = synth.new_multiply(4.0 / 3.0, lfo_vc);
+	// 	let feedback_mul = synth.new_multiply(lp, feedback_mul);
+	// 	synth.new_store_write(feedback, feedback_mul);
+
+	// 	synth.new_add(c, bass);
+
+	// 	synth_context.push_synth(synth).unwrap();
+	// }
+
 	{
 		let mut synth = Synth::new();
-		synth.set_gain(0.3);
+		synth.set_gain(0.5);
 
-		let fm_osc = synth.push_node(Node::new_sine(1.0/3.4));
-		let fm = synth.push_node(Node::new_multiply(fm_osc, 1.0));
+		let mut feedback_chain = Vec::new();
 
-		let freq = synth.push_node(Node::new_add(fm, 110.0));
-		let freq_2 = synth.push_node(Node::new_multiply(freq, 3.02 / 2.0));
-		let freq_bass = synth.push_node(Node::new_multiply(freq, 1.0/2.0));
+		for _ in 0..1 {
+			feedback_chain.push(synth.new_value_store());
+		}
 
-		let a = synth.push_node(Node::new_saw(freq));
-		let b = synth.push_node(Node::new_saw(freq_2));
-		let c = synth.push_node(Node::new_add(a, b));
+		let feedback_head = feedback_chain[0];
+		let feedback_tail = feedback_chain[feedback_chain.len() - 1];
 
-		let bass = synth.push_node(Node::new_sine(freq_bass));
+		// let mul_osc = synth.new_multiply(52.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(80.0, feedback_tail);
+		let mul_osc = synth.new_multiply(110.0, feedback_tail);
 
-		let wobble = synth.push_node(Node::new_sine(4.4));
-		let wobble = synth.push_node(Node::new_add(wobble, 1.0));
-		let wobble = synth.push_node(Node::new_divide(wobble, 2.0));
+		let fm = synth.new_saw(mul_osc);
+		let fm = synth.new_multiply(fm, 180.0);
 
-		let wobble = synth.push_node(Node::new_power(wobble, 5.0));
-		let wobble = synth.push_node(Node::new_multiply(wobble, 8000.0));
-		let wobble = synth.push_node(Node::new_add(wobble, 500.0));
+		let oscf0 = synth.new_add(220.0, fm);
+		let oscf1 = synth.new_multiply(oscf0, 1.1);
 
-		let c = synth.push_node(Node::new_lowpass(c, wobble));
-		let c = synth.push_node(Node::new_lowpass(c, wobble));
-		let c = synth.push_node(Node::new_lowpass(c, wobble));
-		let c = synth.push_node(Node::new_lowpass(c, wobble));
+		let osc = synth.new_square(oscf0, 1.0);
+		let osc2 = synth.new_square(oscf1, 1.0);
 
-		let c = synth.push_node(Node::new_add(c, bass));
+		let osc = synth.new_add(osc, osc2);
+
+		let mul_osc = synth.new_sub(osc, feedback_tail);
+
+		for sd in feedback_chain.windows(2).rev() {
+			if let &[src, dst] = sd {
+				synth.new_store_write(dst, src);
+			}
+		}
+		
+		let osc = synth.new_lowpass(osc, 500.0);
+
+		synth.new_store_write(feedback_head, mul_osc);
+		synth.set_output(osc);
 
 		synth_context.push_synth(synth).unwrap();
 	}
@@ -177,10 +227,8 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 	use std::mem::transmute;
 
 	let synth_context: &mut voi_synth::Context = transmute(ud);
-
 	let buffer = synth_context.get_ready_buffer().expect("Failed to get ready buffer");
 
 	buffer.copy_to(stream, length as usize);
-
 	synth_context.queue_empty_buffer(buffer).unwrap();
 }

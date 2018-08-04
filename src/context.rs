@@ -1,4 +1,4 @@
-use std::thread::{JoinHandle, spawn};
+use std::thread::spawn;
 use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
 use std::sync::{Mutex, Arc};
 use SynthResult;
@@ -12,7 +12,6 @@ use lerp;
 pub struct Context {
 	shared_context: Arc<Mutex<SharedContext>>,
 
-	evaluation_thread: JoinHandle<SynthResult<()>>,
 	queued_buffer_tx: SyncSender<Buffer>,
 	ready_buffer_rx: Receiver<Buffer>,
 }
@@ -23,10 +22,11 @@ impl Context {
 		let (ready_buffer_tx, ready_buffer_rx) = sync_channel::<Buffer>(16);
 
 		let shared_context = Arc::new(Mutex::new(SharedContext::new()));
-		let evaluation_thread = {
+
+		{
 			let shared_context = shared_context.clone();
 
-			spawn(move || {
+			spawn::<_, SynthResult<_>>(move || {
 				for mut buffer in queued_buffer_rx.iter() {
 					shared_context.lock().map_err(
 						|_| err_msg("Failed to lock shared context in evaluation thread"))?
@@ -36,13 +36,12 @@ impl Context {
 				}
 	
 				Ok(())
-			})
-		};
+			});
+		}
 
 		Context {
 			shared_context,
 
-			evaluation_thread,
 			queued_buffer_tx,
 			ready_buffer_rx,
 		}

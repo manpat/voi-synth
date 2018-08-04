@@ -19,3 +19,10 @@ impl Buffer {
 		ptr::copy(self.data.as_ptr(), dst, self.data.len().min(length / 4));
 	}
 }
+
+
+// pub struct BufferSampler { pub position: usize }
+
+// impl BufferSampler {
+// 	pub fn advance(&mut self)
+// }

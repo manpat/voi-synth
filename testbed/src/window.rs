@@ -43,10 +43,4 @@ impl Window {
 			Ok(Window { sdl_window })
 		}
 	}
-
-	pub fn swap(&mut self) {
-		unsafe {
-			SDL_GL_SwapWindow(self.sdl_window);
-		}
-	}
 }
