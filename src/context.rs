@@ -71,7 +71,9 @@ impl Context {
 	}
 
 	pub fn set_sample_rate(&self, sample_rate: f32) {
-		self.shared_context.lock().unwrap().evaluation_ctx.sample_rate = sample_rate;
+		let mut ctx = self.shared_context.lock().unwrap();
+		ctx.evaluation_ctx.sample_rate = sample_rate;
+		ctx.evaluation_ctx.sample_dt = 1.0 / sample_rate;
 	}
 
 	pub fn init_buffer_queue(&self, buffer_size: usize, buffer_count: usize) -> SynthResult<()> {
@@ -94,6 +96,7 @@ impl Context {
 
 pub struct EvaluationContext {
 	pub sample_rate: f32,
+	pub sample_dt: f32,
 
 	pub sample_arena: Vec<f32>,
 
@@ -126,6 +129,7 @@ impl SharedContext {
 
 			evaluation_ctx: EvaluationContext {
 				sample_rate: 22050.0,
+				sample_dt: 1.0 / 22050.0,
 				sample_arena: Vec::new(),
 			},
 

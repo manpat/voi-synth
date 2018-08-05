@@ -32,7 +32,6 @@ pub struct Synth {
 
 	pub(crate) instructions: Vec<Node>,
 	pub(crate) value_store: Vec<f32>,
-	// interpolators: Vec<Interpolator>,
 }
 
 impl Synth {
@@ -47,11 +46,6 @@ impl Synth {
 			instructions: Vec::new(),
 			value_store: Vec::new(),
 		}
-	}
-
-	pub(crate) fn add_node(&mut self, inst: Node) -> NodeID {
-		self.instructions.push(inst);
-		NodeID(self.instructions.len() as u32 - 1)
 	}
 
 	pub fn new_value_store(&mut self) -> StoreID {
@@ -98,7 +92,7 @@ impl Synth {
 			let sample = match *inst {
 				Node::Sine{ref mut phase} => phase.advance(inp(eval_ctx, val_store)).sin(),
 				Node::Saw{ref mut phase} => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
-				Node::Square{ref mut phase, ..} => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
+				Node::Square{ref mut phase} => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
 				Node::Triangle{ref mut phase} => {
 					let ph = phase.advance(inp(eval_ctx, val_store));
 					if ph <= 0.5 {
@@ -110,11 +104,12 @@ impl Synth {
 
 
 				Node::LowPass{input, freq, ref mut prev_result} => {
-					let sample = input.evaluate(inp(eval_ctx, val_store));
-					let cutoff = freq.evaluate(inp(eval_ctx, val_store));
+					let ctx = inp(eval_ctx, val_store);
+					let sample = input.evaluate(ctx);
+					let cutoff = freq.evaluate(ctx);
 
 					if cutoff > 0.0 {
-						let dt = 1.0 / eval_ctx.sample_rate;
+						let dt = eval_ctx.sample_dt;
 						let a = dt / (dt + 1.0 / (2.0 * PI * cutoff));
 						*prev_result = lerp(*prev_result, sample, a);
 					} else {
@@ -125,11 +120,12 @@ impl Synth {
 				}
 
 				Node::HighPass{input, freq, ref mut prev_sample_diff} => {
-					let sample = input.evaluate(inp(eval_ctx, val_store));
-					let cutoff = freq.evaluate(inp(eval_ctx, val_store));
+					let ctx = inp(eval_ctx, val_store);
+					let sample = input.evaluate(ctx);
+					let cutoff = freq.evaluate(ctx);
 
 					let rc = 1.0 / (2.0 * PI * cutoff);
-					let a = rc / (rc + 1.0/eval_ctx.sample_rate);
+					let a = rc / (rc + eval_ctx.sample_dt);
 
 					let result = a * (*prev_sample_diff + sample);
 					*prev_sample_diff = result - sample;
@@ -137,10 +133,23 @@ impl Synth {
 					result
 				}
 
+				Node::Clamp{input, lb, ub} => {
+					let ctx = inp(eval_ctx, val_store);
+					let sample = input.evaluate(ctx);
+					let lb_val = lb.evaluate(ctx);
+					let ub_val = ub.evaluate(ctx);
+					sample.max(lb_val).min(ub_val)
+				}
+
 				Node::Remap{input, in_lb, in_ub, out_lb, out_ub} => {
 					let sample = input.evaluate(inp(eval_ctx, val_store));
 					let normalised = (sample - in_lb) / (in_ub - in_lb);
 					normalised * (out_ub - out_lb) + out_lb
+				}
+
+				Node::Mix{a, b, mix} => {
+					let ctx = inp(eval_ctx, val_store);
+					lerp(a.evaluate(ctx), b.evaluate(ctx), mix.evaluate(ctx))
 				}
 
 				Node::Add(a, b) => a.evaluate(inp(eval_ctx, val_store)) + b.evaluate(inp(eval_ctx, val_store)),
@@ -158,6 +167,8 @@ impl Synth {
 
 					v
 				}
+
+				Node::EnvAR(ref mut env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
 
 				_ => unimplemented!()
 			};

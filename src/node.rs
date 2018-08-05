@@ -1,6 +1,8 @@
 use synth::{Synth, StoreID, StoreType};
 use context::EvaluationContext;
 
+use envelope as env;
+
 use std::f32::consts::PI;
 
 // NOTE: evaluation of Input::Node assumes that dependent nodes are evaluated before terminal nodes
@@ -13,13 +15,12 @@ pub enum Input {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct InputContext<'a, 'b> {
+pub struct InputContext<'a, 'b> {
 	pub eval_ctx: &'a EvaluationContext,
 	pub value_store: &'b Vec<f32>,
 }
 
 impl Input {
-	// pub(crate) fn evaluate(self, eval_ctx: &EvaluationContext, value_store: &Vec<f32>) -> f32 {
 	pub(crate) fn evaluate(self, ctx: InputContext) -> f32 {
 		// TODO: Profile, [f32]::get_unchecked
 		match self {
@@ -49,7 +50,7 @@ impl Into<Input> for StoreID {
 
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Phase {
+pub struct Phase {
 	phase: f32,
 	period: f32,
 
@@ -90,18 +91,20 @@ impl Phase {
 pub struct NodeID (pub(crate) u32);
 
 #[derive(Debug, Clone)]
-pub(crate) enum Node {
+pub enum Node {
 	Sine{ phase: Phase },
 	Triangle{ phase: Phase },
-	Square{ phase: Phase, width: Input },
+	Square{ phase: Phase },
 	Saw{ phase: Phase },
 	Noise{ phase: Phase },
 
 	LowPass{ input: Input, freq: Input, prev_result: f32 },
 	HighPass{ input: Input, freq: Input, prev_sample_diff: f32 },
 
+	Clamp{ input: Input, lb: Input, ub: Input },
 	Remap{ input: Input, in_lb: f32, in_ub: f32, out_lb: f32, out_ub: f32 },
 
+	Mix{ a: Input, b: Input, mix: Input },
 	Add(Input, Input),
 	Subtract(Input, Input),
 	Multiply(Input, Input),
@@ -110,30 +113,14 @@ pub(crate) enum Node {
 
 	StoreRead(StoreID),
 	StoreWrite(StoreID, Input),
+
+	EnvAR(env::AR),
 }
 
 pub trait NodeContainer {
-	fn new_sine<I: Into<Input>>(&mut self, freq: I) -> NodeID;
-	fn new_triangle<I: Into<Input>>(&mut self, freq: I) -> NodeID;
-	fn new_saw<I: Into<Input>>(&mut self, freq: I) -> NodeID;
-	fn new_square<I: Into<Input>, I2: Into<Input>>(&mut self, freq: I, width: I2) -> NodeID;
+	fn add_node(&mut self, inst: Node) -> NodeID;
 
-	fn new_lowpass<I: Into<Input>, I2: Into<Input>>(&mut self, input: I, freq: I2) -> NodeID;
-	fn new_highpass<I: Into<Input>, I2: Into<Input>>(&mut self, input: I, freq: I2) -> NodeID;
-
-	fn new_remap<I: Into<Input>>(&mut self, input: I, in_lb: f32, in_ub: f32, out_lb: f32, out_ub: f32) -> NodeID;
-
-	fn new_add<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID;
-	fn new_sub<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID;
-	fn new_multiply<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID;
-	fn new_divide<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID;
-	fn new_power<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID;
-
-	fn new_store_read (&mut self, store: StoreID) -> NodeID;
-	fn new_store_write<I: Into<Input>> (&mut self, store: StoreID, v: I) -> NodeID;
-}
-
-impl NodeContainer for Synth {
+	
 	fn new_sine<I: Into<Input>>(&mut self, freq: I) -> NodeID {
 		self.add_node(Node::Sine{ phase: Phase::with_period(freq.into(), 2.0 * PI) })
 	}
@@ -146,8 +133,8 @@ impl NodeContainer for Synth {
 		self.add_node(Node::Saw{ phase: Phase::new(freq.into()) })
 	}
 
-	fn new_square<I: Into<Input>, I2: Into<Input>>(&mut self, freq: I, width: I2) -> NodeID {
-		self.add_node(Node::Square{ phase: Phase::new(freq.into()), width: width.into() })
+	fn new_square<I: Into<Input>>(&mut self, freq: I) -> NodeID {
+		self.add_node(Node::Square{ phase: Phase::new(freq.into()) })
 	}
 
 
@@ -158,8 +145,25 @@ impl NodeContainer for Synth {
 		self.add_node(Node::HighPass{ input: input.into(), freq: freq.into(), prev_sample_diff: 0.0 })
 	}
 
+	fn new_clamp<I: Into<Input>, L: Into<Input>, U: Into<Input>>(&mut self, input: I, lb: L, ub: U) -> NodeID {
+		self.add_node(Node::Clamp{input: input.into(), lb: lb.into(), ub: ub.into()})
+	}
+
 	fn new_remap<I: Into<Input>>(&mut self, input: I, in_lb: f32, in_ub: f32, out_lb: f32, out_ub: f32) -> NodeID {
 		self.add_node(Node::Remap{ input: input.into(), in_lb, in_ub, out_lb, out_ub })
+	}
+
+	fn new_signal_to_control<I: Into<Input>>(&mut self, input: I) -> NodeID {
+		self.new_remap(input, -1.0, 1.0,  0.0, 1.0)
+	}
+
+	fn new_control_to_signal<I: Into<Input>>(&mut self, input: I) -> NodeID {
+		self.new_remap(input, 0.0, 1.0, -1.0, 1.0)
+	}
+
+
+	fn new_mix<A: Into<Input>, B: Into<Input>, M: Into<Input>>(&mut self, a: A, b: B, m: M) -> NodeID {
+		self.add_node(Node::Mix{a: a.into(), b: b.into(), mix: m.into()})
 	}
 
 	fn new_add<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID { self.add_node(Node::Add(a.into(), b.into())) }
@@ -173,5 +177,16 @@ impl NodeContainer for Synth {
 	}
 	fn new_store_write<I: Into<Input>> (&mut self, store: StoreID, v: I) -> NodeID {
 		self.add_node(Node::StoreWrite(store, v.into()))
+	}
+
+	fn new_env_ar<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
+		self.add_node(Node::EnvAR(env::AR::new(attack, release, gate.into())))
+	}
+}
+
+impl NodeContainer for Synth {
+	fn add_node(&mut self, inst: Node) -> NodeID {
+		self.instructions.push(inst);
+		NodeID(self.instructions.len() as u32 - 1)
 	}
 }

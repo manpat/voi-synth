@@ -59,7 +59,7 @@ fn main() {
 	// 			0 => { synth.push_node(Node::new_sine(f)); }
 	// 			1 => { synth.push_node(Node::new_triangle(f)); }
 	// 			2 => { synth.push_node(Node::new_saw(f)); }
-	// 			3 => { synth.push_node(Node::new_square(f, 0.0)); }
+	// 			3 => { synth.push_node(Node::new_square(f)); }
 
 	// 			_ => {}
 	// 		}
@@ -114,40 +114,66 @@ fn main() {
 
 		let mut feedback_chain = Vec::new();
 
-		for _ in 0..1 {
+		for _ in 0..64 {
 			feedback_chain.push(synth.new_value_store());
 		}
 
 		let feedback_head = feedback_chain[0];
 		let feedback_tail = feedback_chain[feedback_chain.len() - 1];
 
-		// let mul_osc = synth.new_multiply(52.0, feedback_tail);
+		let mul_osc = synth.new_multiply(52.0, feedback_tail);
 		// let mul_osc = synth.new_multiply(80.0, feedback_tail);
-		let mul_osc = synth.new_multiply(110.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(110.0, feedback_tail);
 
 		let fm = synth.new_saw(mul_osc);
 		let fm = synth.new_multiply(fm, 180.0);
 
 		let oscf0 = synth.new_add(220.0, fm);
-		let oscf1 = synth.new_multiply(oscf0, 1.1);
+		let oscf1 = synth.new_multiply(oscf0, 0.51);
+		let oscf2 = synth.new_multiply(oscf0, 2.0);
 
-		let osc = synth.new_square(oscf0, 1.0);
-		let osc2 = synth.new_square(oscf1, 1.0);
+		let osc = synth.new_triangle(oscf0);
+		let osc2 = synth.new_square(oscf1);
+		let osc3 = synth.new_sine(oscf2);
 
 		let osc = synth.new_add(osc, osc2);
+		let osc = synth.new_add(osc, osc3);
 
+		// let osc = synth.new_clamp(osc, -100.0, 1.0);
 		let mul_osc = synth.new_sub(osc, feedback_tail);
+		// let mul_osc = synth.new_sub(feedback_tail, osc);
+		// let mul_osc_lfo = synth.new_square(2.0);
+		let mul_osc_lfo = synth.new_triangle(200.0);
+		let mul_osc_lfo = synth.new_signal_to_control(mul_osc_lfo);
+		let mul_osc_lfo = synth.new_power(mul_osc_lfo, 5.0);
+		let mul_osc_lfo = synth.new_control_to_signal(mul_osc_lfo);
+		let mul_osc = synth.new_multiply(mul_osc, mul_osc_lfo);
 
 		for sd in feedback_chain.windows(2).rev() {
 			if let &[src, dst] = sd {
 				synth.new_store_write(dst, src);
 			}
 		}
-		
-		let osc = synth.new_lowpass(osc, 500.0);
 
 		synth.new_store_write(feedback_head, mul_osc);
 		synth.set_output(osc);
+
+		synth_context.push_synth(synth).unwrap();
+	}
+
+	{
+		let mut synth = Synth::new();
+		synth.set_gain(200.0);
+
+		let beat = synth.new_square(1.0);
+		let env = synth.new_env_ar(0.08, 0.76, beat);
+
+		let freq_mod = synth.new_multiply(env, 10.0);
+		let freq = synth.new_add(25.0, freq_mod);
+		let osc = synth.new_triangle(freq);
+
+		let mixed = synth.new_multiply(osc, env);
+		synth.set_output(mixed);
 
 		synth_context.push_synth(synth).unwrap();
 	}
