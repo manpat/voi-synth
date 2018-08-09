@@ -1,4 +1,4 @@
-use buffer::Buffer;
+use buffer::{Buffer, BufferID, BufferUsageType, SamplerContext};
 use context::EvaluationContext;
 use node::{Node, NodeID, InputContext};
 
@@ -10,17 +10,8 @@ pub mod flags {
 	// const 
 }
 
-#[repr(u8)]
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum StoreType {
-	SingleValue,
-	Buffer,
-	SharedBuffer, // in evaluation ctx
-	// DelayLine
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct StoreID (pub(crate) StoreType, pub(crate) u16);
+pub struct StoreID (pub(crate) u32);
 
 #[derive(Clone, Debug)]
 pub struct Synth {
@@ -32,6 +23,7 @@ pub struct Synth {
 
 	pub(crate) instructions: Vec<Node>,
 	pub(crate) value_store: Vec<f32>,
+	pub(crate) local_buffers: Vec<Buffer>,
 }
 
 impl Synth {
@@ -45,12 +37,18 @@ impl Synth {
 
 			instructions: Vec::new(),
 			value_store: Vec::new(),
+			local_buffers: Vec::new(),
 		}
 	}
 
 	pub fn new_value_store(&mut self) -> StoreID {
 		self.value_store.push(0.0);
-		StoreID(StoreType::SingleValue, self.value_store.len() as u16 - 1)
+		StoreID(self.value_store.len() as u32 - 1)
+	}
+
+	pub fn new_buffer(&mut self, data: Vec<f32>) -> BufferID {
+		self.local_buffers.push(Buffer{ data });
+		BufferID(BufferUsageType::Local, self.local_buffers.len() as u16 - 1)
 	}
 
 	pub fn set_gain(&mut self, gain: f32) { self.gain = gain }
@@ -85,6 +83,7 @@ impl Synth {
 
 		let instructions = &mut self.instructions;
 		let val_store = &mut self.value_store;
+		let local_buffers = &mut self.local_buffers;
 
 		for (idx, inst) in instructions.iter_mut().enumerate() {
 			let inp = |eval_ctx, value_store| InputContext {eval_ctx, value_store};
@@ -158,14 +157,16 @@ impl Synth {
 				Node::Divide(a, b) => a.evaluate(inp(eval_ctx, val_store)) / b.evaluate(inp(eval_ctx, val_store)),
 				Node::Power(a, b) => a.evaluate(inp(eval_ctx, val_store)).powf(b.evaluate(inp(eval_ctx, val_store))),
 
-				Node::StoreWrite(StoreID(store_type, idx), input) => {
+				Node::StoreWrite(StoreID(idx), input) => {
 					let v = input.evaluate(inp(eval_ctx, val_store));
-					match store_type {
-						StoreType::SingleValue => { val_store[idx as usize] = v }
-						_ => unimplemented!(),
-					}
-
+					val_store[idx as usize] = v;
 					v
+				}
+
+				Node::Sampler(ref mut sampler) => {
+					sampler.advance(SamplerContext{
+						eval_ctx, local_buffers
+					})
 				}
 
 				Node::EnvAR(ref mut env_ar) => env_ar.advance(inp(eval_ctx, val_store)),

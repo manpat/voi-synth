@@ -1,4 +1,5 @@
-use synth::{Synth, StoreID, StoreType};
+use synth::{Synth, StoreID};
+use buffer::{BufferID, BufferSampler};
 use context::EvaluationContext;
 
 use envelope as env;
@@ -15,9 +16,9 @@ pub enum Input {
 }
 
 #[derive(Clone, Copy)]
-pub struct InputContext<'a, 'b> {
-	pub eval_ctx: &'a EvaluationContext,
-	pub value_store: &'b Vec<f32>,
+pub struct InputContext<'eval_ctx, 'synth> {
+	pub eval_ctx: &'eval_ctx EvaluationContext,
+	pub value_store: &'synth Vec<f32>,
 }
 
 impl Input {
@@ -26,11 +27,7 @@ impl Input {
 		match self {
 			Input::Literal(f) => f,
 			Input::Node(NodeID(idx)) => ctx.eval_ctx.sample_arena[idx as usize],
-			Input::Store(StoreID(store_type, idx)) => match store_type {
-				StoreType::SingleValue => ctx.value_store[idx as usize],
-				StoreType::Buffer => unimplemented!(),
-				StoreType::SharedBuffer => unimplemented!(), // eval_ctx.shared_buffers[idx as usize]
-			}
+			Input::Store(StoreID(idx)) => ctx.value_store[idx as usize],
 		}
 	}
 }
@@ -111,8 +108,8 @@ pub enum Node {
 	Divide(Input, Input),
 	Power(Input, Input),
 
-	StoreRead(StoreID),
 	StoreWrite(StoreID, Input),
+	Sampler(BufferSampler),
 
 	EnvAR(env::AR),
 }
@@ -172,11 +169,11 @@ pub trait NodeContainer {
 	fn new_divide<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID { self.add_node(Node::Divide(a.into(), b.into())) }
 	fn new_power<I: Into<Input>, I2: Into<Input>>(&mut self, a: I, b: I2) -> NodeID { self.add_node(Node::Power(a.into(), b.into())) }
 
-	fn new_store_read (&mut self, store: StoreID) -> NodeID {
-		self.add_node(Node::StoreRead(store))
-	}
 	fn new_store_write<I: Into<Input>> (&mut self, store: StoreID, v: I) -> NodeID {
 		self.add_node(Node::StoreWrite(store, v.into()))
+	}
+	fn new_sampler(&mut self, buffer_id: BufferID) -> NodeID {
+		self.add_node(Node::Sampler(BufferSampler{buffer_id, position: 0}))
 	}
 
 	fn new_env_ar<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {

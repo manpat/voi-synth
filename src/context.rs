@@ -3,7 +3,7 @@ use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
 use std::sync::{Mutex, Arc};
 use SynthResult;
 use synth::Synth;
-use buffer::Buffer;
+use buffer::{Buffer, BufferID, BufferUsageType};
 
 use failure::err_msg;
 
@@ -76,6 +76,12 @@ impl Context {
 		ctx.evaluation_ctx.sample_dt = 1.0 / sample_rate;
 	}
 
+	pub fn create_shared_buffer(&self, data: Vec<f32>) -> SynthResult<BufferID> {
+		let mut ctx = self.shared_context.lock().unwrap();
+		ctx.evaluation_ctx.shared_buffers.push(Buffer{ data });
+		Ok(BufferID(BufferUsageType::Shared, (ctx.evaluation_ctx.shared_buffers.len() - 1) as u16))
+	}
+
 	pub fn init_buffer_queue(&self, buffer_size: usize, buffer_count: usize) -> SynthResult<()> {
 		for _ in 0..buffer_count {
 			self.queued_buffer_tx.send(Buffer::new(buffer_size))?;
@@ -99,6 +105,7 @@ pub struct EvaluationContext {
 	pub sample_dt: f32,
 
 	pub sample_arena: Vec<f32>,
+	pub shared_buffers: Vec<Buffer>,
 
 	// Wavetables
 }
@@ -131,6 +138,7 @@ impl SharedContext {
 				sample_rate: 22050.0,
 				sample_dt: 1.0 / 22050.0,
 				sample_arena: Vec::new(),
+				shared_buffers: Vec::new(),
 			},
 
 			average_fill_time: 0.0,
