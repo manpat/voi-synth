@@ -1,3 +1,4 @@
+#![feature(extern_prelude)]
 #![feature(box_syntax)]
 #![feature(nll)]
 
@@ -122,19 +123,32 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 
 #[allow(dead_code)]
 fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
-	let mut lisp_context = lisp::Context::new();
-	lisp_context.evaluate("  ( a b 123 )  ( + 1 2.0  ) ")?;
-	lisp_context.evaluate("(a b 123)(+ 1 2.0)")?;
-	lisp_context.evaluate("
-		(defstore feedback)
+	// lisp::evaluate(synth_context, "  ( a b 123 )  ( + 1 2.0  ) ")?;
+	// lisp::evaluate(synth_context, "(a b 123)(+ 1 2.0)")?;
+	// lisp::evaluate(synth_context, "
+	// 	(let lfo (*
+	// 		(* (sine 3) (sine 7))
+	// 		10
+	// 	))
 
-		(let lfo (* (sin 6) (sin feedback)))
+	// 	(let result
+	// 		(+	(sine (+ lfo 440))
+	// 			(triangle (+ lfo 221))))
+
+	// 	(output result)
+	// ")?;
+
+	lisp::evaluate(synth_context, "
+		(def-store feedback)
+
+		(let lfo (+ (sin 10) (* 300 (sin feedback))))
+		(let lfo (* lfo 3))
 
 		(let result
-			(+	(sine (+ lfo 440))
+			(*	(sine (+ lfo 440))
 				(triangle (+ lfo 220))))
 
-		(store feedback result)
+		(store feedback (- feedback result))
 		(output result)
 	")?;
 
