@@ -170,6 +170,7 @@ impl Synth {
 				}
 
 				Node::EnvAR(ref mut env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
+				Node::EnvADSR(ref mut env_adsr) => env_adsr.advance(inp(eval_ctx, val_store)),
 
 				_ => unimplemented!()
 			};

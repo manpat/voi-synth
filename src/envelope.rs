@@ -6,7 +6,7 @@ enum State {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ADSR {
+pub struct ADSR {
 	state: State,
 	position: f32,
 

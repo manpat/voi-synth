@@ -20,204 +20,21 @@ macro_rules! from_cstr {
 }
 
 mod window;
+mod lisp_frontend;
 
 use voi_synth::*;
 use window::*;
+use lisp_frontend as lisp;
 
 fn main() -> SynthResult<()> {
+	std::env::set_var("RUST_BACKTRACE", "1");
+
 	let _window = Window::new().expect("Window open failed");
 	let mut synth_context = box voi_synth::Context::new();
 
-	// let freqs = [
-	// 	55.0, 56.0, 57.0,
-	// 	110.0, 110.1, 110.2, 110.3,
-	// 	220.0,
-	// 	220.5,
-	// 	220.0 * 3.0/4.0,
-	// 	220.1 * 3.0/4.0,
-	// 	220.2 * 3.0/4.0,
-	// 	220.3 * 3.0/4.0,
-	// 	330.2, 330.9, 331.1,
-	// 	331.2, 331.9, 332.1,
-	// 	440.0, 440.3, 440.7,
-	// 	550.0, 550.3, 550.7,
-	// 	660.0, 660.3, 660.7,
-	// 	770.0, 770.3, 770.7,
-	// 	880.0, 880.3, 880.7,
-	// ];
-
-	// for i in 0..1 {
-	// 	for &f in freqs.iter() {
-	// 		use voi_synth::synth::*;
-
-	// 		let mut synth = Synth::new();
-	// 		synth.set_gain(0.02);
-
-	// 		let f = f + (i as f32) * 0.05;
-
-	// 		match i%4 {
-	// 			0 => { synth.push_node(Node::new_sine(f)); }
-	// 			1 => { synth.push_node(Node::new_triangle(f)); }
-	// 			2 => { synth.push_node(Node::new_saw(f)); }
-	// 			3 => { synth.push_node(Node::new_square(f)); }
-
-	// 			_ => {}
-	// 		}
-
-	// 		synth_context.push_synth(synth).unwrap();
-	// 	}
-	// }
-
-	// {
-	// 	let mut synth = Synth::new();
-	// 	synth.set_gain(0.3);
-
-	// 	let feedback = synth.new_value_store();
-
-	// 	let lfo_osc = synth.new_sine(1.0/3.4);
-	// 	let lfo = synth.new_multiply(lfo_osc, 2.0);
-
-	// 	let freq = synth.new_add(lfo, 110.0);
-	// 	let freq_2 = synth.new_multiply(freq, 3.02 / 2.0);
-	// 	let freq_bass = synth.new_multiply(freq, 1.0/2.0);
-
-	// 	let feedback_add = synth.new_multiply(freq, feedback);
-	// 	let a = synth.new_saw(feedback_add);
-	// 	let b = synth.new_saw(freq_2);
-	// 	let c = synth.new_add(a, b);
-
-	// 	let bass = synth.new_sine(freq_bass);
-
-	// 	let wobble_osc = synth.new_sine(6.0);
-	// 	let wobble = synth.new_remap(wobble_osc, -1.0, 1.0,  0.0, 1.0);
-	// 	let wobble = synth.new_power(wobble, 5.0);
-	// 	let wobble_freq = synth.new_remap(wobble, 0.0, 1.0,  600.0, 20000.0);
-
-	// 	let lp = synth.new_lowpass(c, wobble_freq);
-	// 	let lp = synth.new_lowpass(lp, wobble_freq);
-	// 	let lp = synth.new_lowpass(lp, wobble_freq);
-	// 	let lp = synth.new_lowpass(lp, wobble_freq);
-
-	// 	let lfo_vc = synth.new_remap(wobble_osc, -1.0, 1.0,  0.8, 1.2);
-	// 	let feedback_mul = synth.new_multiply(4.0 / 3.0, lfo_vc);
-	// 	let feedback_mul = synth.new_multiply(lp, feedback_mul);
-	// 	synth.new_store_write(feedback, feedback_mul);
-
-	// 	synth.new_add(c, bass);
-
-	// 	synth_context.push_synth(synth).unwrap();
-	// }
-
-	// {
-	// 	let mut synth = Synth::new();
-	// 	synth.set_gain(0.5);
-
-	// 	let mut feedback_chain = Vec::new();
-
-	// 	for _ in 0..64 {
-	// 		feedback_chain.push(synth.new_value_store());
-	// 	}
-
-	// 	let feedback_head = feedback_chain[0];
-	// 	let feedback_tail = feedback_chain[feedback_chain.len() - 1];
-
-	// 	let mul_osc = synth.new_multiply(52.0, feedback_tail);
-	// 	// let mul_osc = synth.new_multiply(80.0, feedback_tail);
-	// 	// let mul_osc = synth.new_multiply(110.0, feedback_tail);
-
-	// 	let fm = synth.new_saw(mul_osc);
-	// 	let fm = synth.new_multiply(fm, 180.0);
-
-	// 	let oscf0 = synth.new_add(220.0, fm);
-	// 	let oscf1 = synth.new_multiply(oscf0, 0.51);
-	// 	let oscf2 = synth.new_multiply(oscf0, 2.0);
-
-	// 	let osc = synth.new_triangle(oscf0);
-	// 	let osc2 = synth.new_square(oscf1);
-	// 	let osc3 = synth.new_sine(oscf2);
-
-	// 	let osc = synth.new_add(osc, osc2);
-	// 	let osc = synth.new_add(osc, osc3);
-
-	// 	// let osc = synth.new_clamp(osc, -100.0, 1.0);
-	// 	let mul_osc = synth.new_sub(osc, feedback_tail);
-	// 	// let mul_osc = synth.new_sub(feedback_tail, osc);
-	// 	// let mul_osc_lfo = synth.new_square(2.0);
-	// 	let mul_osc_lfo = synth.new_triangle(200.0);
-	// 	let mul_osc_lfo = synth.new_signal_to_control(mul_osc_lfo);
-	// 	let mul_osc_lfo = synth.new_power(mul_osc_lfo, 5.0);
-	// 	let mul_osc_lfo = synth.new_control_to_signal(mul_osc_lfo);
-	// 	let mul_osc = synth.new_multiply(mul_osc, mul_osc_lfo);
-
-	// 	for sd in feedback_chain.windows(2).rev() {
-	// 		if let &[src, dst] = sd {
-	// 			synth.new_store_write(dst, src);
-	// 		}
-	// 	}
-
-	// 	synth.new_store_write(feedback_head, mul_osc);
-	// 	synth.set_output(osc);
-
-	// 	synth_context.push_synth(synth).unwrap();
-	// }
-	// {
-	// 	let mut synth = Synth::new();
-	// 	synth.set_gain(200.0);
-
-	// 	let beat = synth.new_square(1.0);
-	// 	let env = synth.new_env_ar(0.08, 0.76, beat);
-
-	// 	let freq_mod = synth.new_multiply(env, 10.0);
-	// 	let freq = synth.new_add(25.0, freq_mod);
-	// 	let osc = synth.new_triangle(freq);
-
-	// 	let mixed = synth.new_multiply(osc, env);
-	// 	synth.set_output(mixed);
-
-	// 	synth_context.push_synth(synth).unwrap();
-	// }
-	let prebaked_buffer = {
-		let mut synth = Synth::new();
-		synth.set_gain(0.1);
-
-		let mut osc_acc = synth.new_triangle(55.0);
-
-		for i in 0..1000 {
-			let osc = synth.new_saw(110.0 + i as f32 / 10.0);
-			osc_acc = synth.new_add(osc_acc, osc);
-		}
-
-		synth.set_output(osc_acc);
-
-		let mut eval_ctx = context::EvaluationContext {
-			sample_rate: 44100.0,
-			sample_dt: 1.0 / 44100.0,
-
-			sample_arena: Vec::new(),
-			shared_buffers: Vec::new(),
-		};
-
-		let mut buffer = Buffer::new(44100);
-		synth.prewarm(44100, &mut eval_ctx);
-		synth.evaluate_into_buffer(&mut buffer, &mut eval_ctx);
-		buffer
-	};
-
-	{
-		let test_buffer = synth_context.create_shared_buffer(prebaked_buffer.data)?;
-
-		let mut synth = Synth::new();
-		synth.set_gain(1.0);
-
-		let beat = synth.new_square(1.0);
-		let env = synth.new_env_ar(0.08, 0.76, beat);
-
-		let sampler = synth.new_sampler(test_buffer);
-		let mixed = synth.new_multiply(sampler, env);
-		synth.set_output(mixed);
-
-		synth_context.push_synth(synth).unwrap();
-	}
+	test_lisp(&mut synth_context)?;
+	// test_feedback(&mut synth_context)?;
+	// test_prebake(&mut synth_context)?;
 
 	let mut audio_device = init_audio(&mut synth_context).expect("Audio init failed");
 	start_audio(&mut audio_device);
@@ -300,4 +117,148 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 
 	buffer.copy_to(stream, length as usize);
 	synth_context.queue_empty_buffer(buffer).unwrap();
+}
+
+
+#[allow(dead_code)]
+fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
+	let mut lisp_context = lisp::Context::new();
+	lisp_context.evaluate("  ( a b 123 )  ( + 1 2.0  ) ")?;
+	lisp_context.evaluate("(a b 123)(+ 1 2.0)")?;
+	lisp_context.evaluate("
+		(defstore feedback)
+
+		(let lfo (* (sin 6) (sin feedback)))
+
+		(let result
+			(+	(sine (+ lfo 440))
+				(triangle (+ lfo 220))))
+
+		(store feedback result)
+		(output result)
+	")?;
+
+	Ok(())
+}
+
+
+
+#[allow(dead_code)]
+fn test_feedback(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
+	{
+		let mut synth = Synth::new();
+		synth.set_gain(0.5);
+
+		let mut feedback_chain = Vec::new();
+
+		for _ in 0..64 {
+			feedback_chain.push(synth.new_value_store());
+		}
+
+		let feedback_head = feedback_chain[0];
+		let feedback_tail = feedback_chain[feedback_chain.len() - 1];
+
+		let mul_osc = synth.new_multiply(52.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(80.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(110.0, feedback_tail);
+
+		let fm = synth.new_saw(mul_osc);
+		let fm = synth.new_multiply(fm, 180.0);
+
+		let oscf0 = synth.new_add(220.0, fm);
+		let oscf1 = synth.new_multiply(oscf0, 0.51);
+		let oscf2 = synth.new_multiply(oscf0, 2.0);
+
+		let osc = synth.new_triangle(oscf0);
+		let osc2 = synth.new_square(oscf1);
+		let osc3 = synth.new_sine(oscf2);
+
+		let osc = synth.new_add(osc, osc2);
+		let osc = synth.new_add(osc, osc3);
+
+		// let osc = synth.new_clamp(osc, -100.0, 1.0);
+		let mul_osc = synth.new_sub(osc, feedback_tail);
+		// let mul_osc = synth.new_sub(feedback_tail, osc);
+		// let mul_osc_lfo = synth.new_square(2.0);
+		let mul_osc_lfo = synth.new_triangle(200.0);
+		let mul_osc_lfo = synth.new_signal_to_control(mul_osc_lfo);
+		let mul_osc_lfo = synth.new_power(mul_osc_lfo, 5.0);
+		let mul_osc_lfo = synth.new_control_to_signal(mul_osc_lfo);
+		let mul_osc = synth.new_multiply(mul_osc, mul_osc_lfo);
+
+		for sd in feedback_chain.windows(2).rev() {
+			if let &[src, dst] = sd {
+				synth.new_store_write(dst, src);
+			}
+		}
+
+		synth.new_store_write(feedback_head, mul_osc);
+		synth.set_output(osc);
+
+		synth_context.push_synth(synth)?;
+	}
+
+	let mut synth = Synth::new();
+	synth.set_gain(200.0);
+
+	let beat = synth.new_square(1.0);
+	let env = synth.new_env_ar(0.08, 0.76, beat);
+
+	let freq_mod = synth.new_multiply(env, 10.0);
+	let freq = synth.new_add(25.0, freq_mod);
+	let osc = synth.new_triangle(freq);
+
+	let mixed = synth.new_multiply(osc, env);
+	synth.set_output(mixed);
+
+	synth_context.push_synth(synth)?;
+
+	Ok(())
+}
+
+
+#[allow(dead_code)]
+fn test_prebake(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
+	let prebaked_buffer = {
+		let mut synth = Synth::new();
+		synth.set_gain(0.1);
+
+		let osc_acc = synth.new_triangle(55.0);
+
+		use std::cell::RefCell;
+		let synth = RefCell::new(synth);
+
+		let s_ref = || synth.borrow_mut();
+
+		let osc = (0..10)
+			.map(|i| s_ref().new_saw(110.0 + i as f32 / 10.0))
+			.fold(osc_acc, |a, s| s_ref().new_add(a, s));
+
+		let mut synth = synth.into_inner();
+
+		synth.set_output(osc);
+
+		let mut eval_ctx = context::EvaluationContext::new(44100.0);
+
+		let mut buffer = Buffer::new(44100);
+		synth.prewarm(44100, &mut eval_ctx);
+		synth.evaluate_into_buffer(&mut buffer, &mut eval_ctx);
+		buffer
+	};
+
+	let test_buffer = synth_context.create_shared_buffer(prebaked_buffer.data)?;
+
+	let mut synth = Synth::new();
+	synth.set_gain(1.0);
+
+	let beat = synth.new_square(1.0);
+	let env = synth.new_env_ar(0.08, 0.76, beat);
+
+	let sampler = synth.new_sampler(test_buffer);
+	let mixed = synth.new_multiply(sampler, env);
+	synth.set_output(mixed);
+
+	synth_context.push_synth(synth)?;
+
+	Ok(())
 }

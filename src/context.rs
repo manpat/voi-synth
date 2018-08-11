@@ -110,6 +110,18 @@ pub struct EvaluationContext {
 	// Wavetables
 }
 
+impl EvaluationContext {
+	pub fn new(sample_rate: f32) -> Self {
+		EvaluationContext {
+			sample_rate,
+			sample_dt: 1.0 / sample_rate, 
+
+			sample_arena: Vec::new(),
+			shared_buffers: Vec::new(),
+		}
+	}
+}
+
 
 
 struct SharedContext {
@@ -134,12 +146,7 @@ impl SharedContext {
 			envelope: 1000.0,
 			signal_dc: 0.0,
 
-			evaluation_ctx: EvaluationContext {
-				sample_rate: 22050.0,
-				sample_dt: 1.0 / 22050.0,
-				sample_arena: Vec::new(),
-				shared_buffers: Vec::new(),
-			},
+			evaluation_ctx: EvaluationContext::new(22050.0),
 
 			average_fill_time: 0.0,
 		}

@@ -112,6 +112,7 @@ pub enum Node {
 	Sampler(BufferSampler),
 
 	EnvAR(env::AR),
+	EnvADSR(env::ADSR),
 }
 
 pub trait NodeContainer {
@@ -178,6 +179,10 @@ pub trait NodeContainer {
 
 	fn new_env_ar<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
 		self.add_node(Node::EnvAR(env::AR::new(attack, release, gate.into())))
+	}
+	fn new_env_adsr<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
+		unimplemented!()
+		// self.add_node(Node::EnvADSR(env::ADSR::new(attack, release, gate.into())))
 	}
 }
 
