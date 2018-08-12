@@ -29,6 +29,22 @@ impl Buffer {
 		let dst = transmute(dst);
 		ptr::copy(self.data.as_ptr(), dst, self.data.len().min(length / 4));
 	}
+
+	pub unsafe fn copy_to_stereo(&self, dst: *mut u8, length: usize) {
+		use std::mem::transmute;
+		use std::mem::size_of;
+
+		type SampleType = [f32; 2];
+
+		let stereo = self.data.iter()
+			.map(|f| [*f, *f])
+			.take(length / size_of::<SampleType>());
+
+		let dst: *mut SampleType = transmute(dst);
+		for (i, s) in stereo.enumerate() {
+			*dst.offset(i as isize) = s;
+		}
+	}
 }
 
 #[derive(Clone, Copy)]

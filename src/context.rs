@@ -76,6 +76,11 @@ impl Context {
 		ctx.evaluation_ctx.sample_dt = 1.0 / sample_rate;
 	}
 
+	pub fn get_sample_rate(&self) -> f32 {
+		let mut ctx = self.shared_context.lock().unwrap();
+		ctx.evaluation_ctx.sample_rate
+	}
+
 	pub fn create_shared_buffer(&self, data: Vec<f32>) -> SynthResult<BufferID> {
 		let mut ctx = self.shared_context.lock().unwrap();
 		ctx.evaluation_ctx.shared_buffers.push(Buffer{ data });

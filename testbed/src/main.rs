@@ -116,41 +116,15 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 	let synth_context: &mut voi_synth::Context = transmute(ud);
 	let buffer = synth_context.get_ready_buffer().expect("Failed to get ready buffer");
 
-	buffer.copy_to(stream, length as usize);
+	buffer.copy_to_stereo(stream, length as usize);
 	synth_context.queue_empty_buffer(buffer).unwrap();
 }
 
 
 #[allow(dead_code)]
 fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
-	// lisp::evaluate(synth_context, "  ( a b 123 )  ( + 1 2.0  ) ")?;
-	// lisp::evaluate(synth_context, "(a b 123)(+ 1 2.0)")?;
-	// lisp::evaluate(synth_context, "
-	// 	(let lfo (*
-	// 		(* (sine 3) (sine 7))
-	// 		10
-	// 	))
-
-	// 	(let result
-	// 		(+	(sine (+ lfo 440))
-	// 			(triangle (+ lfo 221))))
-
-	// 	(output result)
-	// ")?;
-
-	lisp::evaluate(synth_context, "
-		(def-store feedback)
-
-		(let lfo (+ (sin 10) (* 300 (sin feedback))))
-		(let lfo (* lfo 3))
-
-		(let result
-			(*	(sine (+ lfo 440))
-				(triangle (+ lfo 220))))
-
-		(store feedback (- feedback result))
-		(output result)
-	")?;
+	let script = include_str!("scripts/test0.voisynth");
+	lisp::evaluate(synth_context, &script)?;
 
 	Ok(())
 }

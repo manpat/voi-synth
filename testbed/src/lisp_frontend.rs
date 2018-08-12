@@ -3,8 +3,10 @@ use failure::Error;
 
 use voi_synth::{
 	Context as SynthContext,
+	context::EvaluationContext as SynthEvaluationContext,
 	node::Input as SynthInput,
 	Synth,
+	Buffer as SynthBuffer,
 	NodeContainer,
 	NodeID, synth::StoreID
 };
@@ -12,8 +14,14 @@ use voi_synth::{
 pub type LispResult<T> = Result<T, Error>;
 
 pub fn evaluate(ctx: &mut SynthContext, input: &str) -> LispResult<()> {
-	let top_level_exprs = ExprReader::new(input).parse_toplevel()?;
-	println!("{:?}", top_level_exprs);
+	use std::iter::once;
+
+	let comment_free_input = input.lines()
+		.map(|l| l.split(';').next().unwrap())
+		.flat_map(|l| l.chars().chain(once('\n')) )
+		.collect::<String>();
+
+	let top_level_exprs = ExprReader::new(&comment_free_input).parse_toplevel()?;
 
 	let synth = evaluate_synth(ctx, top_level_exprs)?;
 	ctx.push_synth(synth).unwrap();
@@ -41,11 +49,11 @@ impl<'a> SExpression<'a> {
 		}
 	}
 
-	fn expect_list(self) -> LispResult<Vec<SExpression<'a>>> {
+	fn expect_number(self) -> LispResult<f32> {
 		match self {
-			List(v) => Ok(v),
-			Identifier(s) => bail!("Expected list, got identifier: '{}'", s),
-			Number(x) => bail!("Expected list, got number: {}", x),
+			Identifier(s) => bail!("Expected number, got identifier: '{}'", s),
+			Number(x) => Ok(x),
+			List(v) => bail!("Expected number, got list: ({:?})", v),
 		}
 	}
 }
@@ -115,6 +123,12 @@ fn evaluate_synth<'a>(ctx: &mut SynthContext, top_level: Vec<SExpression<'a>>) -
 					ctx.let_bindings.insert(ident, value);
 				}
 
+				"gain" => {
+					ensure_args!(func_name, list == 1);
+					let gain = list.remove(0).expect_number()?;
+					ctx.synth.set_gain(gain);
+				}
+
 				"output" => {
 					ensure_args!(func_name, list == 1);
 
@@ -136,7 +150,10 @@ fn evaluate_synth<'a>(ctx: &mut SynthContext, top_level: Vec<SExpression<'a>>) -
 					ctx.synth.new_store_write(ident.expect_store()?, value);
 				}
 
-				_ => bail!("Unknown top level function: '{}'", func_name),
+				_ => {
+					list.insert(0, SExpression::Identifier(func_name));
+					ctx.execute_function(list)?;
+				}
 			}
 
 		} else {
@@ -149,7 +166,7 @@ fn evaluate_synth<'a>(ctx: &mut SynthContext, top_level: Vec<SExpression<'a>>) -
 
 
 struct EvaluationContext<'a> {
-	synth_ctx: &'a mut SynthContext,
+	synth_context: &'a mut SynthContext,
 	synth: Synth,
 
 	let_bindings: HashMap<&'a str, SynthInput>,
@@ -157,9 +174,9 @@ struct EvaluationContext<'a> {
 
 
 impl<'a> EvaluationContext<'a> {
-	fn new(synth_ctx: &'a mut SynthContext) -> Self {
+	fn new(synth_context: &'a mut SynthContext) -> Self {
 		EvaluationContext {
-			synth_ctx,
+			synth_context,
 			synth: Synth::new(),
 
 			let_bindings: HashMap::new(),
@@ -167,6 +184,8 @@ impl<'a> EvaluationContext<'a> {
 	}
 
 	fn execute_function(&mut self, mut list: Vec<SExpression<'a>>) -> LispResult<SynthInput> {
+		use std::cell::RefCell;
+
 		if list.is_empty() {
 			bail!("Tried to evaluate an empty list");
 		}
@@ -175,44 +194,108 @@ impl<'a> EvaluationContext<'a> {
 
 		match func_name {
 			"*" => {
-				ensure_args!(func_name, list == 2);
+				ensure_args!(func_name, list >= 2);
 
-				let a = self.evaluate_sexpr(list.remove(0))?;
-				let b = self.evaluate_sexpr(list.remove(0))?;
+				let a = self.evaluate_sexpr(list.remove(0));
+				let r_self = RefCell::new(self);
 
-				Ok(self.synth.new_multiply(a, b).into())
+				// TODO: take advantage of associativity
+				list.into_iter()
+					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr))
+					.fold(a, |a, e| {
+						Ok(r_self.borrow_mut().synth.new_multiply(a?, e?).into())
+					})
 			}
 
 			"+" => {
-				ensure_args!(func_name, list == 2);
+				ensure_args!(func_name, list >= 2);
 
-				let a = self.evaluate_sexpr(list.remove(0))?;
-				let b = self.evaluate_sexpr(list.remove(0))?;
+				let a = self.evaluate_sexpr(list.remove(0));
+				let r_self = RefCell::new(self);
 
-				Ok(self.synth.new_add(a, b).into())
+				// TODO: take advantage of associativity
+				list.into_iter()
+					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr))
+					.fold(a, |a, e| {
+						Ok(r_self.borrow_mut().synth.new_add(a?, e?).into())
+					})
 			}
 
 			"-" => {
-				ensure_args!(func_name, list == 2);
+				ensure_args!(func_name, list >= 2);
 
+				let a = self.evaluate_sexpr(list.remove(0));
+				let r_self = RefCell::new(self);
+
+				list.into_iter()
+					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr))
+					.fold(a, |a, e| {
+						Ok(r_self.borrow_mut().synth.new_sub(a?, e?).into())
+					})
+			}
+
+			"mix" => {
+				ensure_args!(func_name, list == 3);
 				let a = self.evaluate_sexpr(list.remove(0))?;
 				let b = self.evaluate_sexpr(list.remove(0))?;
-
-				Ok(self.synth.new_sub(a, b).into())
+				let mix = self.evaluate_sexpr(list.remove(0))?;
+				Ok(self.synth.new_mix(a, b, mix).into())
 			}
 
 			"sin" | "sine" => {
 				ensure_args!(func_name, list == 1);
-
 				let freq = self.evaluate_sexpr(list.remove(0))?;
 				Ok(self.synth.new_sine(freq).into())
 			}
 
 			"tri" | "triangle" => {
 				ensure_args!(func_name, list == 1);
-
 				let freq = self.evaluate_sexpr(list.remove(0))?;
 				Ok(self.synth.new_triangle(freq).into())
+			}
+
+			"sqr" | "square" => {
+				ensure_args!(func_name, list == 1);
+				let freq = self.evaluate_sexpr(list.remove(0))?;
+				Ok(self.synth.new_square(freq).into())
+			}
+
+			"saw" | "sawtooth" => {
+				ensure_args!(func_name, list == 1);
+				let freq = self.evaluate_sexpr(list.remove(0))?;
+				Ok(self.synth.new_saw(freq).into())
+			}
+
+			"lp" | "lowpass" => {
+				ensure_args!(func_name, list == 2);
+				let cutoff = self.evaluate_sexpr(list.remove(0))?;
+				let input = self.evaluate_sexpr(list.remove(0))?;
+				Ok(self.synth.new_lowpass(cutoff, input).into())
+			}
+
+			"hp" | "highpass" => {
+				ensure_args!(func_name, list == 2);
+				let cutoff = self.evaluate_sexpr(list.remove(0))?;
+				let input = self.evaluate_sexpr(list.remove(0))?;
+				Ok(self.synth.new_highpass(cutoff, input).into())
+			}
+
+			"bake" => {
+				ensure_args!(func_name, list >= 2);
+				let sample_rate = self.synth_context.get_sample_rate();
+				let samples = list.remove(0).expect_number()? * sample_rate;
+				let samples = samples as usize;
+
+				ensure!(samples > 0, "You can't bake a synth to a zero length buffer");
+
+				let mut synth = evaluate_synth(self.synth_context, list)?;
+				let mut eval_ctx = SynthEvaluationContext::new(sample_rate);
+				let mut eval_buffer = SynthBuffer::new(samples);
+
+				synth.evaluate_into_buffer(&mut eval_buffer, &mut eval_ctx);
+				let buffer_id = self.synth.new_buffer(eval_buffer.data);
+
+				Ok(self.synth.new_sampler(buffer_id).into())
 			}
 
 			_ => bail!("Unknown function: '{}'", func_name),
@@ -266,16 +349,7 @@ impl<'a> ExprReader<'a> {
 	}
 
 	fn skip_whitespace(&mut self) {
-		let next = self.input
-			.char_indices()
-			.skip_while(|(_, c)| c.is_whitespace())
-			.next();
-
-		if let Some((pos, _)) = next {
-			self.input = &self.input[pos..];
-		} else {
-			self.input = &self.input[0..0];
-		}
+		self.input = self.input.trim_left();
 	}
 
 	fn parse_toplevel(&mut self) -> LispResult<Vec<SExpression<'a>>> {
@@ -311,20 +385,12 @@ impl<'a> ExprReader<'a> {
 		self.skip_whitespace();
 
 		let word_end = self.input
-			.char_indices()
-			.skip_while(|(_, c)| !c.is_whitespace())
-			.map(|(p, _)| p)
-			.next();
+			.find(|c: char| c.is_whitespace())
+			.unwrap_or(self.input.len());
 
-		if let Some(word_end) = word_end {
-			let (word, rest) = self.input.split_at(word_end);
-			self.input = rest;
-			Ok(word)
-		} else {
-			let word = self.input;
-			self.input = &self.input[0..0];
-			Ok(word)
-		}
+		let (word, rest) = self.input.split_at(word_end);
+		self.input = rest;
+		Ok(word)
 	}
 
 	fn parse_list(&mut self) -> LispResult<Vec<SExpression<'a>>> {
@@ -369,19 +435,3 @@ impl<'a> ExprReader<'a> {
 		}
 	}
 }
-
-
-/*
-
-(defstore feedback)
-
-(let lfo (* (sin 6) (sin feedback)))
-
-(let result
-	(+	(sine (+ lfo 440))
-		(triangle (+ lfo 220))))
-
-(store feedback result)
-(output result)
-
-*/

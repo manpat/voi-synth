@@ -1,0 +1,30 @@
+(gain 0.2)
+
+(def-store feedback)
+
+(let lfo (+ (sin 3) (* 110 (sin feedback))))
+(let lfo (* lfo 10))
+
+(let result
+	(+	(sine (+ lfo 440))
+		(triangle (+ lfo 221))
+		(bake 1.0
+			(+
+				(tri 54.5)
+				; (saw 54)
+				; (sqr 55)
+				; (saw 56)
+				(sin 110)
+				(sin 220)
+				(sin 221)
+				(sin 441)
+				; (* 0.75 (sin 881))
+				; (* 0.5 (sin 1670))
+				; (* 0.25 (sin (* 2 1670)))
+				; (* 0.25 (sin (* 3 1670)))
+				; (* 0.25 (sin (* 4 1670)))
+			))
+		))
+
+(store feedback (- result feedback))
+(output result)

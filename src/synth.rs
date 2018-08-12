@@ -61,11 +61,9 @@ impl Synth {
 
 		// TODO: Make sure instructions are evaluated in order. i.e., make sure dependencies are evaluated before terminal nodes
 
-		for vs in buffer.data.chunks_mut(2) {
+		for s in buffer.data.iter_mut() {
 			let value = self.evaluate_sample(eval_ctx) * self.gain;
-
-			vs[0] += value as f32;
-			vs[1] += value as f32;
+			*s += value;
 		}
 	}
 
