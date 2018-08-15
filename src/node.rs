@@ -143,6 +143,7 @@ pub trait NodeContainer {
 		self.add_node(Node::HighPass{ input: input.into(), freq: freq.into(), prev_sample_diff: 0.0 })
 	}
 
+
 	fn new_clamp<I: Into<Input>, L: Into<Input>, U: Into<Input>>(&mut self, input: I, lb: L, ub: U) -> NodeID {
 		self.add_node(Node::Clamp{input: input.into(), lb: lb.into(), ub: ub.into()})
 	}

@@ -80,10 +80,10 @@ fn init_audio(synth_context: &mut Box<voi_synth::Context>) -> SynthResult<AudioC
 	let mut want: SDL_AudioSpec = unsafe { zeroed() };
 	let mut have: SDL_AudioSpec = unsafe { uninitialized() };
 
-	// want.freq = 22050;
-	want.freq = 44100;
+	// want.freq = 44100;
+	want.freq = 22050;
 	want.format = AUDIO_F32SYS as u16;
-	want.channels = 2;
+	want.channels = 1;
 	want.samples = 256;
 	want.callback = Some(audio_callback);
 	want.userdata = unsafe{ transmute(&mut **synth_context) };
@@ -93,8 +93,10 @@ fn init_audio(synth_context: &mut Box<voi_synth::Context>) -> SynthResult<AudioC
 	};
 	
 	ensure!(device_id != 0, "Failed to open audio: {}", unsafe { from_cstr!(SDL_GetError()) } );
-	ensure!(have.channels == 2, "Failed to get stereo audio");
+	ensure!(have.channels == 1, "Failed to get stereo audio");
 	ensure!(have.format == AUDIO_F32SYS as _, "Failed to get wanted output format");
+
+	println!("{:?}", have);
 
 	let buffer_size = have.samples as usize * have.channels as usize;
 	synth_context.init_buffer_queue(buffer_size, 3)?;
@@ -116,14 +118,24 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 	let synth_context: &mut voi_synth::Context = transmute(ud);
 	let buffer = synth_context.get_ready_buffer().expect("Failed to get ready buffer");
 
-	buffer.copy_to_stereo(stream, length as usize);
+	buffer.copy_to(stream, length as usize);
+	// buffer.copy_to_stereo(stream, length as usize);
 	synth_context.queue_empty_buffer(buffer).unwrap();
 }
 
 
 #[allow(dead_code)]
 fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
-	let script = include_str!("scripts/test0.voisynth");
+	use std::env;
+
+	let default_script_path = "scripts/test0.voisynth";
+	let script_path = env::args().skip(1)
+		.next()
+		.unwrap_or(default_script_path.into());
+
+	println!("{:?}", script_path);
+
+	let script = std::fs::read_to_string(script_path)?;
 	lisp::evaluate(synth_context, &script)?;
 
 	Ok(())
@@ -135,44 +147,46 @@ fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
 fn test_feedback(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
 	{
 		let mut synth = Synth::new();
-		synth.set_gain(0.5);
+		synth.set_gain(0.3);
 
 		let mut feedback_chain = Vec::new();
 
-		for _ in 0..64 {
+		for _ in 0..32 {
 			feedback_chain.push(synth.new_value_store());
 		}
 
 		let feedback_head = feedback_chain[0];
 		let feedback_tail = feedback_chain[feedback_chain.len() - 1];
 
-		let mul_osc = synth.new_multiply(52.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(52.0, feedback_tail);
 		// let mul_osc = synth.new_multiply(80.0, feedback_tail);
-		// let mul_osc = synth.new_multiply(110.0, feedback_tail);
+		let mul_osc = synth.new_multiply(110.0, feedback_tail);
+		// let mul_osc = synth.new_multiply(220.0, feedback_tail);
 
 		let fm = synth.new_saw(mul_osc);
 		let fm = synth.new_multiply(fm, 180.0);
 
 		let oscf0 = synth.new_add(220.0, fm);
-		let oscf1 = synth.new_multiply(oscf0, 0.51);
-		let oscf2 = synth.new_multiply(oscf0, 2.0);
+		// let oscf1 = synth.new_multiply(oscf0, 0.51);
+		// let oscf2 = synth.new_multiply(oscf0, 2.0);
 
-		let osc = synth.new_triangle(oscf0);
-		let osc2 = synth.new_square(oscf1);
-		let osc3 = synth.new_sine(oscf2);
+		let osc = synth.new_sine(oscf0);
+		// let osc2 = synth.new_square(oscf1);
+		// let osc3 = synth.new_sine(oscf2);
 
-		let osc = synth.new_add(osc, osc2);
-		let osc = synth.new_add(osc, osc3);
+		// let osc = synth.new_add(osc, osc2);
+		// let osc = synth.new_add(osc, osc3);
 
 		// let osc = synth.new_clamp(osc, -100.0, 1.0);
 		let mul_osc = synth.new_sub(osc, feedback_tail);
 		// let mul_osc = synth.new_sub(feedback_tail, osc);
+
 		// let mul_osc_lfo = synth.new_square(2.0);
-		let mul_osc_lfo = synth.new_triangle(200.0);
-		let mul_osc_lfo = synth.new_signal_to_control(mul_osc_lfo);
-		let mul_osc_lfo = synth.new_power(mul_osc_lfo, 5.0);
-		let mul_osc_lfo = synth.new_control_to_signal(mul_osc_lfo);
-		let mul_osc = synth.new_multiply(mul_osc, mul_osc_lfo);
+		// let mul_osc_lfo = synth.new_triangle(200.0);
+		// let mul_osc_lfo = synth.new_signal_to_control(mul_osc_lfo);
+		// let mul_osc_lfo = synth.new_power(mul_osc_lfo, 5.0);
+		// let mul_osc_lfo = synth.new_control_to_signal(mul_osc_lfo);
+		// let mul_osc = synth.new_multiply(mul_osc, mul_osc_lfo);
 
 		for sd in feedback_chain.windows(2).rev() {
 			if let &[src, dst] = sd {
@@ -199,7 +213,7 @@ fn test_feedback(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
 	let mixed = synth.new_multiply(osc, env);
 	synth.set_output(mixed);
 
-	synth_context.push_synth(synth)?;
+	// synth_context.push_synth(synth)?;
 
 	Ok(())
 }
