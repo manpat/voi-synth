@@ -52,6 +52,21 @@ impl<'a> SExpression<'a> {
 
 
 
+trait ExpressionListExt {
+	fn is_constant(&self) -> bool;
+}
+
+impl<'a> ExpressionListExt for Vec<SExpression<'a>> {
+	fn is_constant(&self) -> bool {
+		self.iter().all(|sexpr| match *sexpr {
+			SExpression::Number(_) => true,
+			// SExpression::Identifier(_) => true, // TODO
+			_ => false,
+		})
+	}
+}
+
+
 
 #[derive(Clone, Debug)]
 enum EvalResult {
@@ -114,7 +129,6 @@ impl Into<EvalResult> for NodeID {
 impl Into<EvalResult> for StoreID {
 	fn into(self) -> EvalResult { EvalResult::SynthNode(self.into()) }
 }
-
 
 
 
@@ -230,48 +244,79 @@ impl<'a> EvaluationContext<'a> {
 			"*" => {
 				ensure_args!(func_name, list >= 2);
 
-				let a = self.evaluate_sexpr(list.remove(0))?.to_input();
 				let r_self = RefCell::new(self);
 
-				// TODO: take advantage of associativity
-				let res = list.into_iter()
-					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
-					.fold(a, |a, e| {
-						Ok(r_self.borrow_mut().synth.new_multiply(a?, e?).into())
-					});
+				// TODO: make better
+				if list.is_constant() {
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.expect_constant())
+						.fold(Ok(1.0), |a: LispResult<f32>, e| Ok(a? * e?));
 
-				Ok(res?.into())
+					Ok(res?.into())
+
+				} else {
+					let a = r_self.borrow_mut().evaluate_sexpr(list.remove(0))?.to_input();
+					// TODO: take advantage of associativity
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
+						.fold(a, |a, e| {
+							Ok(r_self.borrow_mut().synth.new_multiply(a?, e?).into())
+						});
+					
+					Ok(res?.into())
+				}
+
 			}
 
 			"+" => {
 				ensure_args!(func_name, list >= 2);
 
-				let a = self.evaluate_sexpr(list.remove(0))?.to_input();
 				let r_self = RefCell::new(self);
 
-				// TODO: take advantage of associativity
-				let res = list.into_iter()
-					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
-					.fold(a, |a, e| {
-						Ok(r_self.borrow_mut().synth.new_add(a?, e?).into())
-					});
+				// TODO: make better
+				if list.is_constant() {
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.expect_constant())
+						.fold(Ok(1.0), |a: LispResult<f32>, e| Ok(a? + e?));
 
-				Ok(res?.into())
+					Ok(res?.into())
+
+				} else {
+					let a = r_self.borrow_mut().evaluate_sexpr(list.remove(0))?.to_input();
+					// TODO: take advantage of associativity
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
+						.fold(a, |a, e| {
+							Ok(r_self.borrow_mut().synth.new_add(a?, e?).into())
+						});
+					
+					Ok(res?.into())
+				}
 			}
 
 			"-" => {
 				ensure_args!(func_name, list >= 2);
 
-				let a = self.evaluate_sexpr(list.remove(0))?.to_input();
 				let r_self = RefCell::new(self);
 
-				let res = list.into_iter()
-					.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
-					.fold(a, |a, e| {
-						Ok(r_self.borrow_mut().synth.new_sub(a?, e?).into())
-					});
+				// TODO: make better
+				if list.is_constant() {
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.expect_constant())
+						.fold(Ok(1.0), |a: LispResult<f32>, e| Ok(a? - e?));
 
-				Ok(res?.into())
+					Ok(res?.into())
+
+				} else {
+					let a = r_self.borrow_mut().evaluate_sexpr(list.remove(0))?.to_input();
+					let res = list.into_iter()
+						.map(|expr| r_self.borrow_mut().evaluate_sexpr(expr)?.to_input())
+						.fold(a, |a, e| {
+							Ok(r_self.borrow_mut().synth.new_sub(a?, e?).into())
+						});
+					
+					Ok(res?.into())
+				}
 			}
 
 			"mix" => {

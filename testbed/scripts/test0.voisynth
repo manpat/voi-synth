@@ -1,4 +1,4 @@
-(gain 0.2)
+(gain (* 2 0.1))
 
 (def-store feedback)
 

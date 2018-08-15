@@ -96,8 +96,6 @@ fn init_audio(synth_context: &mut Box<voi_synth::Context>) -> SynthResult<AudioC
 	ensure!(have.channels == 1, "Failed to get stereo audio");
 	ensure!(have.format == AUDIO_F32SYS as _, "Failed to get wanted output format");
 
-	println!("{:?}", have);
-
 	let buffer_size = have.samples as usize * have.channels as usize;
 	synth_context.init_buffer_queue(buffer_size, 3)?;
 	synth_context.set_sample_rate(have.freq as f32);
