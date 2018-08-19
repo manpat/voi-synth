@@ -33,8 +33,8 @@ fn main() -> SynthResult<()> {
 	let _window = Window::new().expect("Window open failed");
 	let mut synth_context = box voi_synth::Context::new();
 
-	// test_lisp(&mut synth_context)?;
-	test_sequencer(&mut synth_context)?;
+	test_lisp(&mut synth_context)?;
+	// test_sequencer(&mut synth_context)?;
 	// test_feedback(&mut synth_context)?;
 	// test_prebake(&mut synth_context)?;
 
@@ -283,7 +283,7 @@ fn test_prebake(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
 	let beat = synth.new_square(1.0);
 	let env = synth.new_env_ar(0.08, 0.76, beat);
 
-	let sampler = synth.new_sampler(test_buffer);
+	let sampler = synth.new_sampler(test_buffer, 0.0);
 	let mixed = synth.new_multiply(sampler, env);
 	synth.set_output(mixed);
 

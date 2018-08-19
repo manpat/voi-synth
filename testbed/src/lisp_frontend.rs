@@ -36,6 +36,7 @@ enum SExpression<'a> {
 	Identifier(&'a str),
 	Number(f32),
 	List(Vec<SExpression<'a>>),
+	Array(Vec<SExpression<'a>>),
 }
 
 use self::SExpression::*;
@@ -46,6 +47,7 @@ impl<'a> SExpression<'a> {
 			Identifier(s) => Ok(s),
 			Number(x) => bail!("Expected identifier, got number: {}", x),
 			List(v) => bail!("Expected identifier, got list: ({:?})", v),
+			Array(v) => bail!("Expected identifier, got array: ({:?})", v),
 		}
 	}
 }
@@ -71,6 +73,7 @@ impl<'a> ExpressionListExt for Vec<SExpression<'a>> {
 #[derive(Clone, Debug)]
 enum EvalResult {
 	Constant(f32),
+	Array(Vec<f32>),
 	SynthNode(SynthInput),
 	// Function(),
 }
@@ -80,12 +83,21 @@ impl EvalResult {
 		match self {
 			EvalResult::Constant(f) => Ok(f),
 			EvalResult::SynthNode(n) => bail!("Expected constant value, got node: {:?}", n),
+			EvalResult::Array(n) => bail!("Expected constant value, got array: [{:?}]", n),
+		}
+	}
+	fn expect_array(self) -> LispResult<Vec<f32>> {
+		match self {
+			EvalResult::Constant(f) => bail!("Expected array, got constant value: {:?}", f),
+			EvalResult::SynthNode(n) => bail!("Expected array, got node: {:?}", n),
+			EvalResult::Array(n) => Ok(n),
 		}
 	}
 	fn to_input(self) -> LispResult<SynthInput> {
 		match self {
 			EvalResult::Constant(f) => Ok(f.into()),
 			EvalResult::SynthNode(n) => Ok(n),
+			EvalResult::Array(n) => bail!("Expected constant value or synth node, got array: [{:?}]", n),
 		}
 	}
 	fn expect_node_id(self) -> LispResult<NodeID> {
@@ -93,6 +105,7 @@ impl EvalResult {
 
 		match self {
 			EvalResult::Constant(f) => bail!("Expected synth node, got constant: {}", f),
+			EvalResult::Array(n) => bail!("Expected synth node, got array: [{:?}]", n),
 			EvalResult::SynthNode(n) => match n {
 				Literal(l) => bail!("Expected synth node, got Literal: {}", l),
 				Node(n_id) => Ok(n_id),
@@ -105,6 +118,7 @@ impl EvalResult {
 
 		match self {
 			EvalResult::Constant(f) => bail!("Expected synth store, got constant: {}", f),
+			EvalResult::Array(n) => bail!("Expected synth store, got array: [{:?}]", n),
 			EvalResult::SynthNode(n) => match n {
 				Literal(l) => bail!("Expected synth store, got Literal: {}", l),
 				Node(n_id) => bail!("Expected synth store, got Node: {:?}", n_id),
@@ -381,6 +395,18 @@ impl<'a> EvaluationContext<'a> {
 				Ok(self.synth.new_clamp(input, lb, ub).into())
 			}
 
+			"sequencer" => {
+				ensure_args!(func_name, list >= 2);
+				let sequence = self.evaluate_sexpr(list.remove(0))?.expect_array()?;
+				let advance = self.evaluate_sexpr(list.remove(0))?.to_input()?;
+				let reset = if list.len() > 0 {
+					self.evaluate_sexpr(list.remove(0))?.to_input()?
+				} else { 1.0.into() };
+
+				let buf = self.synth.new_buffer(sequence);
+				Ok(self.synth.new_sequencer(buf, advance, reset).into())
+			}
+
 			"bake" => {
 				ensure_args!(func_name, list >= 2);
 				let sample_rate = self.synth_context.get_sample_rate();
@@ -396,7 +422,7 @@ impl<'a> EvaluationContext<'a> {
 				synth.evaluate_into_buffer(&mut eval_buffer, &mut eval_ctx);
 				let buffer_id = self.synth.new_buffer(eval_buffer.data);
 
-				Ok(self.synth.new_sampler(buffer_id).into())
+				Ok(self.synth.new_sampler(buffer_id, 0.0).into())
 			}
 
 			_ => bail!("Unknown function: '{}'", func_name),
@@ -407,10 +433,22 @@ impl<'a> EvaluationContext<'a> {
 		match sexpr {
 			List(v) => self.execute_function(v),
 			Number(n) => Ok(EvalResult::Constant(n)),
+
 			Identifier(i) => {
 				self.let_bindings.get(&i)
 					.cloned()
 					.ok_or_else(|| format_err!("Unknown identifier: '{}'", i))
+			}
+
+			Array(v) => {
+				let mut rs = Vec::with_capacity(v.len());
+
+				for sexpr in v {
+					let result = self.evaluate_sexpr(sexpr)?;
+					rs.push(result.expect_constant()?);
+				}
+
+				Ok(EvalResult::Array(rs))
 			}
 		}
 	}
@@ -467,17 +505,25 @@ impl<'a> ExprReader<'a> {
 	}
 
 	fn parse_sexpression(&mut self) -> LispResult<SExpression<'a>> {
-		if self.peek()? == '(' {
-			let list = self.parse_list()?;
-			Ok( List(list) )
+		match self.peek()? {
+			'(' => {
+				let list = self.parse_list('(', ')')?;
+				Ok( List(list) )
+			}
 
-		} else {
-			let word = self.parse_word()?;
+			'[' => {
+				let list = self.parse_list('[', ']')?;
+				Ok( Array(list) )
+			}
 
-			if let Ok(f) = word.parse() {
-				Ok( Number(f) )
-			} else {
-				Ok( Identifier(word) )
+			_ => {
+				let word = self.parse_word()?;
+
+				if let Ok(f) = word.parse() {
+					Ok( Number(f) )
+				} else {
+					Ok( Identifier(word) )
+				}
 			}
 		}
 	}
@@ -494,8 +540,8 @@ impl<'a> ExprReader<'a> {
 		Ok(word)
 	}
 
-	fn parse_list(&mut self) -> LispResult<Vec<SExpression<'a>>> {
-		let mut list_parser = self.list_parser()?;
+	fn parse_list(&mut self, open: char, close: char) -> LispResult<Vec<SExpression<'a>>> {
+		let mut list_parser = self.list_parser(open, close)?;
 		let mut ret = Vec::new();
 
 		list_parser.skip_whitespace();
@@ -508,15 +554,15 @@ impl<'a> ExprReader<'a> {
 		Ok(ret)
 	}
 
-	fn list_parser(&mut self) -> LispResult<ExprReader<'a>> {
-		self.expect('(')?;
+	fn list_parser(&mut self, open: char, close: char) -> LispResult<ExprReader<'a>> {
+		self.expect(open)?;
 
 		let end = self.input
 			.char_indices()
 			.scan(1, |level, (pos, c)| {
 				match c {
-					'(' => { *level += 1 }
-					')' => { *level -= 1 }
+					c if (c == open) => { *level += 1 }
+					c if (c == close) => { *level -= 1 }
 					_ => {}
 				}
 
@@ -528,7 +574,7 @@ impl<'a> ExprReader<'a> {
 			let (list_str, rest) = self.input.split_at(pos);
 
 			self.input = rest;
-			self.expect(')')?;
+			self.expect(close)?;
 
 			Ok(ExprReader::new(list_str))
 		} else {

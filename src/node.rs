@@ -90,11 +90,10 @@ pub struct NodeID (pub(crate) u32);
 
 #[derive(Debug, Clone)]
 pub enum Node {
-	Sine{ phase: Phase },
-	Triangle{ phase: Phase },
-	Square{ phase: Phase },
-	Saw{ phase: Phase },
-	Noise{ phase: Phase },
+	Sine(Phase),
+	Triangle(Phase),
+	Square(Phase),
+	Saw(Phase),
 
 	LowPass{ input: Input, freq: Input, prev_result: f32 },
 	HighPass{ input: Input, freq: Input, prev_sample_diff: f32 },
@@ -110,7 +109,7 @@ pub enum Node {
 	Power(Input, Input),
 
 	StoreWrite(StoreID, Input),
-	Sampler(BufferSampler),
+	Sampler{ sampler: BufferSampler, reset: Gate },
 	Sequencer{ seq: Sequencer, advance: Gate, reset: Gate },
 
 	EnvAR(env::AR),
@@ -122,19 +121,19 @@ pub trait NodeContainer {
 
 	
 	fn new_sine<I: Into<Input>>(&mut self, freq: I) -> NodeID {
-		self.add_node(Node::Sine{ phase: Phase::with_period(freq.into(), 2.0 * PI) })
+		self.add_node(Node::Sine( Phase::with_period(freq.into(), 2.0 * PI) ))
 	}
 
 	fn new_triangle<I: Into<Input>>(&mut self, freq: I) -> NodeID {
-		self.add_node(Node::Triangle{ phase: Phase::new(freq.into()) })
+		self.add_node(Node::Triangle( Phase::new(freq.into()) ))
 	}
 
 	fn new_saw<I: Into<Input>>(&mut self, freq: I) -> NodeID {
-		self.add_node(Node::Saw{ phase: Phase::new(freq.into()) })
+		self.add_node(Node::Saw( Phase::new(freq.into()) ))
 	}
 
 	fn new_square<I: Into<Input>>(&mut self, freq: I) -> NodeID {
-		self.add_node(Node::Square{ phase: Phase::new(freq.into()) })
+		self.add_node(Node::Square( Phase::new(freq.into()) ))
 	}
 
 
@@ -176,8 +175,11 @@ pub trait NodeContainer {
 	fn new_store_write<I: Into<Input>> (&mut self, store: StoreID, v: I) -> NodeID {
 		self.add_node(Node::StoreWrite(store, v.into()))
 	}
-	fn new_sampler(&mut self, buffer_id: BufferID) -> NodeID {
-		self.add_node(Node::Sampler(BufferSampler::new(buffer_id)))
+	fn new_sampler<R: Into<Input>>(&mut self, buffer_id: BufferID, reset: R) -> NodeID {
+		self.add_node(Node::Sampler{
+			sampler: BufferSampler::new(buffer_id),
+			reset: Gate::new(reset.into())
+		})
 	}
 	fn new_sequencer<A: Into<Input>, R: Into<Input>>(&mut self, buffer_id: BufferID, advance: A, reset: R) -> NodeID {
 		self.add_node(Node::Sequencer{

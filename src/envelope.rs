@@ -82,7 +82,6 @@ impl AR {
 
 	fn update(&mut self, gate: GateState, inc: f32) {
 		use self::State::*;
-		use gate::GateState::*;
 
 		self.state = match self.state {
 			Silence => if gate.is_rising_edge() {

@@ -87,10 +87,10 @@ impl Synth {
 			let inp = |eval_ctx, value_store| InputContext {eval_ctx, value_store};
 
 			let sample = match inst {
-				Node::Sine{phase} => phase.advance(inp(eval_ctx, val_store)).sin(),
-				Node::Saw{phase} => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
-				Node::Square{phase} => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
-				Node::Triangle{phase} => {
+				Node::Sine(phase) => phase.advance(inp(eval_ctx, val_store)).sin(),
+				Node::Saw(phase) => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
+				Node::Square(phase) => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
+				Node::Triangle(phase) => {
 					let ph = phase.advance(inp(eval_ctx, val_store));
 					if ph <= 0.5 {
 						(ph - 0.25)*4.0
@@ -161,7 +161,11 @@ impl Synth {
 					v
 				}
 
-				Node::Sampler(sampler) => {
+				Node::Sampler{sampler, reset} => {
+					if reset.update(inp(eval_ctx, val_store)).is_rising_edge() {
+						sampler.reset();
+					}
+
 					sampler.sample(SamplerContext{
 						eval_ctx, local_buffers
 					})
@@ -184,8 +188,6 @@ impl Synth {
 
 				Node::EnvAR(env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
 				Node::EnvADSR(env_adsr) => env_adsr.advance(inp(eval_ctx, val_store)),
-
-				_ => unimplemented!()
 			};
 
 			unsafe {
