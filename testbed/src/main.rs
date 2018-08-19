@@ -33,7 +33,8 @@ fn main() -> SynthResult<()> {
 	let _window = Window::new().expect("Window open failed");
 	let mut synth_context = box voi_synth::Context::new();
 
-	test_lisp(&mut synth_context)?;
+	// test_lisp(&mut synth_context)?;
+	test_sequencer(&mut synth_context)?;
 	// test_feedback(&mut synth_context)?;
 	// test_prebake(&mut synth_context)?;
 
@@ -80,8 +81,8 @@ fn init_audio(synth_context: &mut Box<voi_synth::Context>) -> SynthResult<AudioC
 	let mut want: SDL_AudioSpec = unsafe { zeroed() };
 	let mut have: SDL_AudioSpec = unsafe { uninitialized() };
 
-	// want.freq = 44100;
-	want.freq = 22050;
+	want.freq = 44100;
+	// want.freq = 22050;
 	want.format = AUDIO_F32SYS as u16;
 	want.channels = 1;
 	want.samples = 256;
@@ -139,6 +140,34 @@ fn test_lisp(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
 	Ok(())
 }
 
+
+
+#[allow(dead_code)]
+fn test_sequencer(synth_context: &mut voi_synth::Context) -> SynthResult<()> {
+	let mut synth = Synth::new();
+	synth.set_gain(0.3);
+
+	let beat_rate = 180.0 / 60.0 * 2.0;
+
+	let pulse = synth.new_square(beat_rate);
+	let pulse2 = synth.new_square(beat_rate * 2.0);
+
+	let pulse = synth.new_signal_to_control(pulse);
+	let pulse2 = synth.new_signal_to_control(pulse2);
+	let pulse = synth.new_multiply(pulse, pulse2); // pulse shortening
+
+	let buf = synth.new_buffer(vec![55.0, 110.0, 220.0, 330.0, 220.0 * 5.0 / 4.0]);
+	let seq = synth.new_sequencer(buf, pulse, 1.0);
+
+	let osc = synth.new_sine(seq);
+	let env = synth.new_env_ar(0.01, 0.7, pulse);
+	let env = synth.new_power(env, 10.0);
+	synth.new_multiply(osc, env);
+
+	synth_context.push_synth(synth)?;
+
+	Ok(())
+}
 
 
 #[allow(dead_code)]

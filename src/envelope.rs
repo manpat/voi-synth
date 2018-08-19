@@ -1,4 +1,5 @@
 use node::{Input, InputContext};
+use gate::{Gate, GateState};
 
 #[derive(Copy, Clone, Debug)]
 enum State {
@@ -10,7 +11,7 @@ pub struct ADSR {
 	state: State,
 	position: f32,
 
-	gate: Input,
+	gate: Input, // TODO: convert to Gate
 
 	atk_inc: f32,
 	dec_inc: f32,
@@ -59,7 +60,7 @@ pub struct AR {
 	state: State,
 	position: f32,
 
-	gate: Input,
+	gate: Gate,
 
 	// in u/s
 	atk_inc: f32,
@@ -67,23 +68,29 @@ pub struct AR {
 }
 
 impl AR {
-	pub fn new(atk: f32, rel: f32, gate: Input) -> AR {
+	pub fn new<G: Into<Input>>(atk: f32, rel: f32, gate: G) -> AR {
 		AR {
 			state: State::Silence,
 			position: 0.0,
 
-			gate,
+			gate: Gate::new(gate.into()),
 
 			atk_inc: 1.0 / atk.max(0.00001),
 			rel_inc: 1.0 / rel.max(0.00001),
 		}
 	}
 
-	fn update(&mut self, gate: f32, inc: f32) {
+	fn update(&mut self, gate: GateState, inc: f32) {
 		use self::State::*;
+		use gate::GateState::*;
 
 		self.state = match self.state {
-			Silence => if gate > 0.5 { self.position = 0.0; Attack } else { Silence }
+			Silence => if gate.is_rising_edge() {
+				self.position = 0.0;
+				Attack
+			} else {
+				Silence
+			}
 
 			Attack => {
 				self.position += self.atk_inc * inc;
@@ -99,9 +106,13 @@ impl AR {
 				self.position -= self.rel_inc * inc;
 				if self.position <= 0.0 {
 					self.position = 0.0;
-					if gate < 0.5 { Silence } else { Release }
+
+					if gate.is_rising_edge() { Attack }
+					else { Silence }
+
 				} else {
-					Release
+					if gate.is_rising_edge() { Attack }
+					else { Release }
 				}
 			}
 
@@ -111,7 +122,7 @@ impl AR {
 
 	pub fn advance(&mut self, input_ctx: InputContext) -> f32 {
 		let sample = self.position;
-		let gate = self.gate.evaluate(input_ctx);
+		let gate = self.gate.update(input_ctx);
 		self.update(gate, input_ctx.eval_ctx.sample_dt);
 		sample
 	}

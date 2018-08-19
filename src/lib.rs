@@ -10,6 +10,7 @@ pub mod synth;
 pub mod node;
 pub mod buffer;
 mod envelope;
+mod gate;
 
 pub use context::Context;
 pub use synth::Synth;

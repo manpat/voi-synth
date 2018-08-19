@@ -86,11 +86,11 @@ impl Synth {
 		for (idx, inst) in instructions.iter_mut().enumerate() {
 			let inp = |eval_ctx, value_store| InputContext {eval_ctx, value_store};
 
-			let sample = match *inst {
-				Node::Sine{ref mut phase} => phase.advance(inp(eval_ctx, val_store)).sin(),
-				Node::Saw{ref mut phase} => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
-				Node::Square{ref mut phase} => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
-				Node::Triangle{ref mut phase} => {
+			let sample = match inst {
+				Node::Sine{phase} => phase.advance(inp(eval_ctx, val_store)).sin(),
+				Node::Saw{phase} => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
+				Node::Square{phase} => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
+				Node::Triangle{phase} => {
 					let ph = phase.advance(inp(eval_ctx, val_store));
 					if ph <= 0.5 {
 						(ph - 0.25)*4.0
@@ -100,7 +100,7 @@ impl Synth {
 				}
 
 
-				Node::LowPass{input, freq, ref mut prev_result} => {
+				Node::LowPass{input, freq, prev_result} => {
 					let ctx = inp(eval_ctx, val_store);
 					let sample = input.evaluate(ctx);
 					let cutoff = freq.evaluate(ctx);
@@ -116,7 +116,7 @@ impl Synth {
 					*prev_result
 				}
 
-				Node::HighPass{input, freq, ref mut prev_sample_diff} => {
+				Node::HighPass{input, freq, prev_sample_diff} => {
 					let ctx = inp(eval_ctx, val_store);
 					let sample = input.evaluate(ctx);
 					let cutoff = freq.evaluate(ctx);
@@ -140,8 +140,8 @@ impl Synth {
 
 				Node::Remap{input, in_lb, in_ub, out_lb, out_ub} => {
 					let sample = input.evaluate(inp(eval_ctx, val_store));
-					let normalised = (sample - in_lb) / (in_ub - in_lb);
-					normalised * (out_ub - out_lb) + out_lb
+					let normalised = (sample - *in_lb) / (*in_ub - *in_lb);
+					normalised * (*out_ub - *out_lb) + *out_lb
 				}
 
 				Node::Mix{a, b, mix} => {
@@ -157,18 +157,33 @@ impl Synth {
 
 				Node::StoreWrite(StoreID(idx), input) => {
 					let v = input.evaluate(inp(eval_ctx, val_store));
-					val_store[idx as usize] = v;
+					val_store[*idx as usize] = v;
 					v
 				}
 
-				Node::Sampler(ref mut sampler) => {
-					sampler.advance(SamplerContext{
+				Node::Sampler(sampler) => {
+					sampler.sample(SamplerContext{
 						eval_ctx, local_buffers
 					})
 				}
 
-				Node::EnvAR(ref mut env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
-				Node::EnvADSR(ref mut env_adsr) => env_adsr.advance(inp(eval_ctx, val_store)),
+				Node::Sequencer{seq, advance, reset} => {
+					let sample_ctx = SamplerContext{ eval_ctx, local_buffers };
+					let input_ctx = inp(eval_ctx, val_store);
+
+					if advance.update(input_ctx).is_rising_edge() {
+						seq.advance(sample_ctx);
+					}
+
+					if reset.update(input_ctx).is_rising_edge() {
+						seq.reset();
+					}
+
+					seq.sample(sample_ctx)
+				}
+
+				Node::EnvAR(env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
+				Node::EnvADSR(env_adsr) => env_adsr.advance(inp(eval_ctx, val_store)),
 
 				_ => unimplemented!()
 			};

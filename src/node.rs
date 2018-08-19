@@ -1,6 +1,7 @@
 use synth::{Synth, StoreID};
-use buffer::{BufferID, BufferSampler};
+use buffer::{BufferID, BufferSampler, Sequencer};
 use context::EvaluationContext;
+use gate::Gate;
 
 use envelope as env;
 
@@ -110,6 +111,7 @@ pub enum Node {
 
 	StoreWrite(StoreID, Input),
 	Sampler(BufferSampler),
+	Sequencer{ seq: Sequencer, advance: Gate, reset: Gate },
 
 	EnvAR(env::AR),
 	EnvADSR(env::ADSR),
@@ -175,16 +177,23 @@ pub trait NodeContainer {
 		self.add_node(Node::StoreWrite(store, v.into()))
 	}
 	fn new_sampler(&mut self, buffer_id: BufferID) -> NodeID {
-		self.add_node(Node::Sampler(BufferSampler{buffer_id, position: 0}))
+		self.add_node(Node::Sampler(BufferSampler::new(buffer_id)))
+	}
+	fn new_sequencer<A: Into<Input>, R: Into<Input>>(&mut self, buffer_id: BufferID, advance: A, reset: R) -> NodeID {
+		self.add_node(Node::Sequencer{
+			seq: Sequencer::new(buffer_id),
+			advance: Gate::new(advance.into()),
+			reset: Gate::new(reset.into()),
+		})
 	}
 
 	fn new_env_ar<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
-		self.add_node(Node::EnvAR(env::AR::new(attack, release, gate.into())))
+		self.add_node(Node::EnvAR(env::AR::new(attack, release, gate)))
 	}
-	fn new_env_adsr<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
-		unimplemented!()
-		// self.add_node(Node::EnvADSR(env::ADSR::new(attack, release, gate.into())))
-	}
+	// fn new_env_adsr<G: Into<Input>> (&mut self, attack: f32, release: f32, gate: G) -> NodeID {
+	// 	unimplemented!()
+	// 	// self.add_node(Node::EnvADSR(env::ADSR::new(attack, release, gate.into())))
+	// }
 }
 
 impl NodeContainer for Synth {

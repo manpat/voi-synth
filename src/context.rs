@@ -50,7 +50,7 @@ impl Context {
 	pub fn dump_stats(&self) {
 		let ctx = self.shared_context.lock().unwrap();
 
-		let max_micros_per_buffer = 1024.0 / ctx.evaluation_ctx.sample_rate * 100000.0;
+		let max_micros_per_buffer = 256.0 / ctx.evaluation_ctx.sample_rate * 1000000.0;
 
 		println!("fill time: {:5.0}μs / {} synths = {:3.2}μs/synth   (limit: {:5.0}μs, rem:{:5.0}μs)    dc: {:1.6}, env: {}",
 			ctx.average_fill_time,
@@ -77,7 +77,7 @@ impl Context {
 	}
 
 	pub fn get_sample_rate(&self) -> f32 {
-		let mut ctx = self.shared_context.lock().unwrap();
+		let ctx = self.shared_context.lock().unwrap();
 		ctx.evaluation_ctx.sample_rate
 	}
 

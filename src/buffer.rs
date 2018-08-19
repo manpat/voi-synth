@@ -47,33 +47,76 @@ impl Buffer {
 	}
 }
 
+
+
 #[derive(Clone, Copy)]
 pub struct SamplerContext<'eval_ctx, 'synth> {
 	pub eval_ctx: &'eval_ctx EvaluationContext,
 	pub local_buffers: &'synth Vec<Buffer>,
 }
 
-#[derive(Clone, Debug)]
-pub struct BufferSampler { pub buffer_id: BufferID, pub position: usize }
-
-impl BufferSampler {
-	pub fn advance(&mut self, ctx: SamplerContext) -> f32 {
+impl<'e,'s> SamplerContext<'e,'s> {
+	fn get_buffer(&self, BufferID(usage, id): BufferID) -> &Buffer {
 		use self::BufferUsageType::*;
 
-		let BufferID(usage, id) = self.buffer_id;
 		let idx = id as usize;
 
-		let buffer = match usage {
-			Local => &ctx.local_buffers[idx],
-			Shared => &ctx.eval_ctx.shared_buffers[idx],
-		};
+		match usage {
+			Local => &self.local_buffers[idx],
+			Shared => &self.eval_ctx.shared_buffers[idx],
+		}
+	}
+}
 
+
+
+#[derive(Clone, Debug)]
+pub struct Sequencer { pub buffer_id: BufferID, pub position: usize }
+
+impl Sequencer {
+	pub fn new(buffer_id: BufferID) -> Self {
+		Sequencer {
+			buffer_id, position: 0
+		}
+	} 
+
+	pub fn reset(&mut self) {
+		self.position = 0;
+	}
+
+	pub fn advance(&mut self, ctx: SamplerContext) {
+		let buffer = ctx.get_buffer(self.buffer_id);
+		let num_samples = buffer.len();
+		self.position = (self.position + 1) % num_samples;
+	}
+
+	pub fn sample(&mut self, ctx: SamplerContext) -> f32 {
+		let buffer = ctx.get_buffer(self.buffer_id);
 		let num_samples = buffer.len();
 
 		assert!(self.position < num_samples);
 
-		let sample = buffer.data[self.position];
-		self.position = (self.position + 1) % num_samples;
+		buffer.data[self.position]
+	}
+}
+
+
+
+
+#[derive(Clone, Debug)]
+pub struct BufferSampler(pub Sequencer);
+
+impl BufferSampler {
+	pub fn new(buffer_id: BufferID) -> Self {
+		BufferSampler(Sequencer::new(buffer_id))
+	}
+
+	pub fn reset(&mut self) { self.0.reset(); }
+
+	pub fn sample(&mut self, ctx: SamplerContext) -> f32 {
+		let seq = &mut self.0;
+		let sample = seq.sample(ctx);
+		seq.advance(ctx);
 		sample
 	}
 }
