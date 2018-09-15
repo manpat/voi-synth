@@ -4,6 +4,7 @@ use std::sync::{Mutex, Arc};
 use SynthResult;
 use synth::Synth;
 use buffer::{Buffer, BufferID, BufferUsageType};
+use parameter::ParameterID;
 
 use failure::err_msg;
 
@@ -79,6 +80,16 @@ impl Context {
 	pub fn get_sample_rate(&self) -> f32 {
 		let ctx = self.shared_context.lock().unwrap();
 		ctx.evaluation_ctx.sample_rate
+	}
+
+	pub fn set_parameter(&self, param_id: ParameterID, value: f32) {
+		let mut ctx = self.shared_context.lock().unwrap();
+		let synth = ctx.synths.iter_mut()
+			.find(|s| s.id == param_id.owner)
+			.unwrap();
+
+		let param = synth.get_parameter(param_id);
+		param.set_value(value);
 	}
 
 	pub fn create_shared_buffer(&self, data: Vec<f32>) -> SynthResult<BufferID> {

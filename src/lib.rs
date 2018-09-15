@@ -9,12 +9,14 @@ pub mod context;
 pub mod synth;
 pub mod node;
 pub mod buffer;
+mod parameter;
 mod envelope;
 mod gate;
 
 pub use context::Context;
 pub use synth::Synth;
 pub use node::{NodeID, NodeContainer};
+pub use parameter::ParameterID;
 pub use buffer::Buffer;
 
 fn lerp(from: f32, to: f32, amt: f32) -> f32 {

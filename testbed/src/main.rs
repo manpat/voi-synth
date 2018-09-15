@@ -22,6 +22,7 @@ macro_rules! from_cstr {
 
 mod window;
 mod lisp_frontend;
+mod midi;
 
 use voi_synth::*;
 use window::*;
@@ -33,13 +34,18 @@ fn main() -> SynthResult<()> {
 	let _window = Window::new().expect("Window open failed");
 	let mut synth_context = box voi_synth::Context::new();
 
-	test_lisp(&mut synth_context)?;
+	let midi_device = midi::init_device()?;
+
+	let params = test_midi(&mut synth_context)?;
+	// test_lisp(&mut synth_context)?;
 	// test_sequencer(&mut synth_context)?;
 	// test_feedback(&mut synth_context)?;
 	// test_prebake(&mut synth_context)?;
 
 	let mut audio_device = init_audio(&mut synth_context).expect("Audio init failed");
 	start_audio(&mut audio_device);
+
+	let mut prev_key = 0;
 
 	'main_loop: loop {
 		for (evt_ty, event) in EventIter {
@@ -57,7 +63,56 @@ fn main() -> SynthResult<()> {
 			}
 		}
 
-		synth_context.dump_stats();
+		if let Some(param) = params.get(1) {
+			synth_context.set_parameter(*param, 0.0);
+		}					
+
+		for message in midi_device.read() {
+			use midi::MidiMessage as Msg;
+
+			if let Msg::Packet([cmd, a, b]) = message {
+				println!("Packet {:02x} [{:02x}, {:02x}]", cmd, a, b);
+
+			} else {
+				println!("{:?}", message);
+			}
+
+			match message {
+				Msg::Control{controller, value, ..} => {
+					if let Some(param) = params.get(controller as usize + 1) {
+						let value = value as f32 / 127.0;
+						synth_context.set_parameter(*param, value);
+					}
+				}
+
+				Msg::NoteOn{key, velocity, ..} => {
+					if let Some(param) = params.get(0) {
+						let key = key as f32;
+						let freq = 440.0 * 2.0f32.powf((key - 64.0) / 12.0);
+						synth_context.set_parameter(*param, freq);
+					}
+
+					let velocity = velocity as f32 / 127.0;
+					if let Some(param) = params.get(1) {
+						synth_context.set_parameter(*param, velocity);
+					}					
+				}
+
+				Msg::NoteOff{key, ..} => {
+					let key = key as i32;
+					if key != prev_key { break }
+					prev_key = key;
+
+					if let Some(param) = params.get(1) {
+						synth_context.set_parameter(*param, 0.0);
+					}					
+				}
+
+				_ => {}
+			}
+		}
+
+		// synth_context.dump_stats();
 
 		use std::thread::sleep;
 		use std::time::Duration;
@@ -121,6 +176,67 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 	// buffer.copy_to_stereo(stream, length as usize);
 	synth_context.queue_empty_buffer(buffer).unwrap();
 }
+
+
+
+#[allow(dead_code)]
+fn test_midi(synth_context: &mut voi_synth::Context) -> SynthResult<Vec<ParameterID>> {
+	let mut synth = Synth::new();
+	synth.set_gain(0.3);
+
+	let feedback_store = synth.new_value_store();
+
+	let rate_param = synth.new_parameter();
+	let beat_rate = synth.new_remap(rate_param, 0.0, 1.0,   1.0, 8.0);
+	let pulse = synth.new_square(beat_rate);
+
+
+	let velocity_param = synth.new_parameter();
+	let freq_param = synth.new_parameter();
+	let freq = synth.new_lowpass(freq_param, 10.0);
+
+	let mod_param = synth.new_parameter();
+	let mod_amt = synth.new_remap(mod_param, 0.0, 1.0,   0.0, 880.0);
+
+	let feedback_param = synth.new_parameter();
+	let feedback_amt = synth.new_remap(feedback_param, 0.0, 1.0,   0.0, 200.0);
+
+	let feedback = synth.new_multiply(feedback_store, feedback_amt);
+	let mod_freq = synth.new_add(freq, feedback);
+
+	let mod_osc = synth.new_sine(mod_freq);
+	let mod_a = synth.new_multiply(mod_osc, mod_amt);
+
+	let osc0_freq = synth.new_add(freq, mod_a);
+	let osc0 = synth.new_square(osc0_freq);
+
+	let osc1_freq = synth.new_multiply(osc0_freq, 0.5);
+	let osc1 = synth.new_saw(osc1_freq);
+
+	let osc = synth.new_add(osc0, osc1);
+	
+	let env = synth.new_env_ar(0.01, 1.5, velocity_param);
+	let env = synth.new_power(env, 10.0);
+	let out = synth.new_multiply(osc, env);
+
+	let feedback = synth.new_sub(osc, feedback_store);
+	synth.new_store_write(feedback_store, feedback);
+
+	synth.set_output(out);
+	synth.get_parameter(freq_param).set_value(440.0);
+
+	synth_context.push_synth(synth)?;
+
+	Ok(vec![
+		freq_param,
+		velocity_param,
+
+		rate_param,
+		mod_param,
+		feedback_param,
+	])
+}
+
 
 
 #[allow(dead_code)]

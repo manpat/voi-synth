@@ -1,6 +1,7 @@
 use synth::{Synth, StoreID};
 use buffer::{BufferID, BufferSampler, Sequencer};
 use context::EvaluationContext;
+use parameter::{ParameterID, Parameter, ParameterSampler, SampleMode as ParamSampleMode};
 use gate::Gate;
 
 use envelope as env;
@@ -13,13 +14,15 @@ use std::f32::consts::PI;
 pub enum Input {
 	Literal(f32),
 	Node(NodeID),
-	Store(StoreID)
+	Store(StoreID),
+	Parameter(ParameterID),
 }
 
 #[derive(Clone, Copy)]
 pub struct InputContext<'eval_ctx, 'synth> {
 	pub eval_ctx: &'eval_ctx EvaluationContext,
 	pub value_store: &'synth Vec<f32>,
+	pub parameters: &'synth Vec<Parameter>,
 }
 
 impl Input {
@@ -29,6 +32,7 @@ impl Input {
 			Input::Literal(f) => f,
 			Input::Node(NodeID(idx)) => ctx.eval_ctx.sample_arena[idx as usize],
 			Input::Store(StoreID(idx)) => ctx.value_store[idx as usize],
+			Input::Parameter(ParameterID{id, ..}) => ctx.parameters[id as usize].evaluate(),
 		}
 	}
 }
@@ -43,6 +47,10 @@ impl Into<Input> for NodeID {
 
 impl Into<Input> for StoreID {
 	fn into(self) -> Input { Input::Store(self) }
+}
+
+impl Into<Input> for ParameterID {
+	fn into(self) -> Input { Input::Parameter(self) }
 }
 
 
@@ -111,6 +119,7 @@ pub enum Node {
 	StoreWrite(StoreID, Input),
 	Sampler{ sampler: BufferSampler, reset: Gate },
 	Sequencer{ seq: Sequencer, advance: Gate, reset: Gate },
+	ParameterSampler(ParameterSampler),
 
 	EnvAR(env::AR),
 	EnvADSR(env::ADSR),
@@ -180,6 +189,9 @@ pub trait NodeContainer {
 			sampler: BufferSampler::new(buffer_id),
 			reset: Gate::new(reset.into())
 		})
+	}
+	fn new_param_sampler(&mut self, param_id: ParameterID, samp_mode: ParamSampleMode) -> NodeID {
+		self.add_node(Node::ParameterSampler(ParameterSampler::new(param_id, samp_mode)))
 	}
 	fn new_sequencer<A: Into<Input>, R: Into<Input>>(&mut self, buffer_id: BufferID, advance: A, reset: R) -> NodeID {
 		self.add_node(Node::Sequencer{

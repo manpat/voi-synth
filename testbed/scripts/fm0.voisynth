@@ -1,0 +1,12 @@
+(gain 0.2)
+(def-store osc-feedback)
+
+(let carrier-freq 110)
+(let harm-ratio 4)
+(let mod-index 0.5)
+
+(let mod-freq (* carrier-freq harm-ratio))
+(let modulator (* (sin mod-freq) mod-freq mod-index))
+
+(let freq (+ carrier-freq modulator))
+(sin freq)

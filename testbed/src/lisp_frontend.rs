@@ -8,7 +8,7 @@ use voi_synth::{
 	Synth,
 	Buffer as SynthBuffer,
 	NodeContainer,
-	NodeID, synth::StoreID
+	NodeID, synth::StoreID, ParameterID
 };
 
 pub type LispResult<T> = Result<T, Error>;
@@ -110,6 +110,7 @@ impl EvalResult {
 				Literal(l) => bail!("Expected synth node, got Literal: {}", l),
 				Node(n_id) => Ok(n_id),
 				Store(s_id) => bail!("Expected synth node, got Store: {:?}", s_id),
+				Parameter(p_id) => bail!("Expected synth node, got Parameter: {:?}", p_id),
 			},
 		}
 	}
@@ -121,8 +122,9 @@ impl EvalResult {
 			EvalResult::Array(n) => bail!("Expected synth store, got array: [{:?}]", n),
 			EvalResult::SynthNode(n) => match n {
 				Literal(l) => bail!("Expected synth store, got Literal: {}", l),
-				Node(n_id) => bail!("Expected synth store, got Node: {:?}", n_id),
+				Node(id) => bail!("Expected synth store, got Node: {:?}", id),
 				Store(s_id) => Ok(s_id),
+				Parameter(id) => bail!("Expected synth store, got Parameter: {:?}", id),
 			},
 		}
 	}
@@ -141,6 +143,10 @@ impl Into<EvalResult> for NodeID {
 }
 
 impl Into<EvalResult> for StoreID {
+	fn into(self) -> EvalResult { EvalResult::SynthNode(self.into()) }
+}
+
+impl Into<EvalResult> for ParameterID {
 	fn into(self) -> EvalResult { EvalResult::SynthNode(self.into()) }
 }
 

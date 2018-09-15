@@ -1,14 +1,11 @@
 use buffer::{Buffer, BufferID, BufferUsageType, SamplerContext};
 use context::EvaluationContext;
 use node::{Node, NodeID, InputContext};
+use parameter::{ParameterID, Parameter};
 
 use lerp;
 
 use std::f32::consts::PI;
-
-pub mod flags {
-	// const 
-}
 
 #[derive(Copy, Clone, Debug)]
 pub struct StoreID (pub(crate) u32);
@@ -16,7 +13,6 @@ pub struct StoreID (pub(crate) u32);
 #[derive(Clone, Debug)]
 pub struct Synth {
 	pub id: u32,
-	pub flags: u32,
 
 	gain: f32,
 	output_node: Option<usize>,
@@ -24,13 +20,32 @@ pub struct Synth {
 	pub(crate) instructions: Vec<Node>,
 	pub(crate) value_store: Vec<f32>,
 	pub(crate) local_buffers: Vec<Buffer>,
+	pub(crate) parameters: Vec<Parameter>,
+}
+
+macro_rules! input_context {
+	($synth:expr, $eval_ctx:expr) => {{
+		let eval_ctx = &$eval_ctx;
+		let value_store = &$synth.value_store;
+		let parameters = &$synth.parameters;
+
+		InputContext { eval_ctx, value_store, parameters }
+	}}
+}
+
+macro_rules! sampler_context {
+	($synth:expr, $eval_ctx:expr) => {{
+		let eval_ctx = &$eval_ctx;
+		let local_buffers = &$synth.local_buffers;
+
+		SamplerContext { eval_ctx, local_buffers }
+	}}
 }
 
 impl Synth {
 	pub fn new() -> Self {
 		Synth {
 			id: 0,
-			flags: 0,
 
 			gain: 1.0,
 			output_node: None,
@@ -38,12 +53,26 @@ impl Synth {
 			instructions: Vec::new(),
 			value_store: Vec::new(),
 			local_buffers: Vec::new(),
+			parameters: Vec::new(),
 		}
 	}
 
 	pub fn new_value_store(&mut self) -> StoreID {
 		self.value_store.push(0.0);
 		StoreID(self.value_store.len() as u32 - 1)
+	}
+
+	pub fn new_parameter(&mut self) -> ParameterID {
+		self.parameters.push(Parameter::new());
+		ParameterID {
+			owner: self.id,
+			id: self.parameters.len() as u32 - 1
+		}
+	}
+
+	pub fn get_parameter(&mut self, ParameterID{owner, id}: ParameterID) -> &mut Parameter {
+		assert!(owner == self.id);
+		&mut self.parameters[id as usize]
 	}
 
 	pub fn new_buffer(&mut self, data: Vec<f32>) -> BufferID {
@@ -79,19 +108,19 @@ impl Synth {
 	fn evaluate_sample(&mut self, eval_ctx: &mut EvaluationContext) -> f32 {
 		assert!(eval_ctx.sample_arena.len() >= self.instructions.len());
 
+		for parameter in self.parameters.iter_mut() {
+			parameter.update(eval_ctx);
+		}
+
 		let instructions = &mut self.instructions;
-		let val_store = &mut self.value_store;
-		let local_buffers = &mut self.local_buffers;
 
 		for (idx, inst) in instructions.iter_mut().enumerate() {
-			let inp = |eval_ctx, value_store| InputContext {eval_ctx, value_store};
-
 			let sample = match inst {
-				Node::Sine(phase) => phase.advance(inp(eval_ctx, val_store)).sin(),
-				Node::Saw(phase) => phase.advance(inp(eval_ctx, val_store)) * 2.0 - 1.0,
-				Node::Square(phase) => 1.0 - (phase.advance(inp(eval_ctx, val_store)) + 0.5).floor() * 2.0,
+				Node::Sine(phase) => phase.advance(input_context!(self, eval_ctx)).sin(),
+				Node::Saw(phase) => phase.advance(input_context!(self, eval_ctx)) * 2.0 - 1.0,
+				Node::Square(phase) => 1.0 - (phase.advance(input_context!(self, eval_ctx)) + 0.5).floor() * 2.0,
 				Node::Triangle(phase) => {
-					let ph = phase.advance(inp(eval_ctx, val_store));
+					let ph = phase.advance(input_context!(self, eval_ctx));
 					if ph <= 0.5 {
 						(ph - 0.25)*4.0
 					} else {
@@ -101,7 +130,7 @@ impl Synth {
 
 
 				Node::LowPass{input, freq, prev_result} => {
-					let ctx = inp(eval_ctx, val_store);
+					let ctx = input_context!(self, eval_ctx);
 					let sample = input.evaluate(ctx);
 					let cutoff = freq.evaluate(ctx);
 
@@ -117,7 +146,7 @@ impl Synth {
 				}
 
 				Node::HighPass{input, freq, prev_sample_diff} => {
-					let ctx = inp(eval_ctx, val_store);
+					let ctx = input_context!(self, eval_ctx);
 					let sample = input.evaluate(ctx);
 					let cutoff = freq.evaluate(ctx);
 
@@ -131,7 +160,7 @@ impl Synth {
 				}
 
 				Node::Clamp{input, lb, ub} => {
-					let ctx = inp(eval_ctx, val_store);
+					let ctx = input_context!(self, eval_ctx);
 					let sample = input.evaluate(ctx);
 					let lb_val = lb.evaluate(ctx);
 					let ub_val = ub.evaluate(ctx);
@@ -139,41 +168,43 @@ impl Synth {
 				}
 
 				Node::Remap{input, in_lb, in_ub, out_lb, out_ub} => {
-					let sample = input.evaluate(inp(eval_ctx, val_store));
+					let sample = input.evaluate(input_context!(self, eval_ctx));
 					let normalised = (sample - *in_lb) / (*in_ub - *in_lb);
 					normalised * (*out_ub - *out_lb) + *out_lb
 				}
 
 				Node::Mix{a, b, mix} => {
-					let ctx = inp(eval_ctx, val_store);
+					let ctx = input_context!(self, eval_ctx);
 					lerp(a.evaluate(ctx), b.evaluate(ctx), mix.evaluate(ctx))
 				}
 
-				Node::Add(a, b) => a.evaluate(inp(eval_ctx, val_store)) + b.evaluate(inp(eval_ctx, val_store)),
-				Node::Subtract(a, b) => a.evaluate(inp(eval_ctx, val_store)) - b.evaluate(inp(eval_ctx, val_store)),
-				Node::Multiply(a, b) => a.evaluate(inp(eval_ctx, val_store)) * b.evaluate(inp(eval_ctx, val_store)),
-				Node::Divide(a, b) => a.evaluate(inp(eval_ctx, val_store)) / b.evaluate(inp(eval_ctx, val_store)),
-				Node::Power(a, b) => a.evaluate(inp(eval_ctx, val_store)).powf(b.evaluate(inp(eval_ctx, val_store))),
+				Node::Add(a, b) => a.evaluate(input_context!(self, eval_ctx)) + b.evaluate(input_context!(self, eval_ctx)),
+				Node::Subtract(a, b) => a.evaluate(input_context!(self, eval_ctx)) - b.evaluate(input_context!(self, eval_ctx)),
+				Node::Multiply(a, b) => a.evaluate(input_context!(self, eval_ctx)) * b.evaluate(input_context!(self, eval_ctx)),
+				Node::Divide(a, b) => a.evaluate(input_context!(self, eval_ctx)) / b.evaluate(input_context!(self, eval_ctx)),
+				Node::Power(a, b) => a.evaluate(input_context!(self, eval_ctx)).powf(b.evaluate(input_context!(self, eval_ctx))),
 
 				Node::StoreWrite(StoreID(idx), input) => {
-					let v = input.evaluate(inp(eval_ctx, val_store));
-					val_store[*idx as usize] = v;
+					let v = input.evaluate(input_context!(self, eval_ctx));
+					self.value_store[*idx as usize] = v;
 					v
 				}
 
 				Node::Sampler{sampler, reset} => {
-					if reset.update(inp(eval_ctx, val_store)).is_rising_edge() {
+					if reset.update(input_context!(self, eval_ctx)).is_rising_edge() {
 						sampler.reset();
 					}
 
-					sampler.sample(SamplerContext{
-						eval_ctx, local_buffers
-					})
+					sampler.sample(sampler_context!(self, eval_ctx))
+				}
+
+				Node::ParameterSampler(sampler) => {
+					sampler.sample(&self.parameters)
 				}
 
 				Node::Sequencer{seq, advance, reset} => {
-					let sample_ctx = SamplerContext{ eval_ctx, local_buffers };
-					let input_ctx = inp(eval_ctx, val_store);
+					let sample_ctx = sampler_context!(self, eval_ctx);
+					let input_ctx = input_context!(self, eval_ctx);
 
 					if advance.update(input_ctx).is_rising_edge() {
 						seq.advance(sample_ctx);
@@ -186,8 +217,8 @@ impl Synth {
 					seq.sample(sample_ctx)
 				}
 
-				Node::EnvAR(env_ar) => env_ar.advance(inp(eval_ctx, val_store)),
-				Node::EnvADSR(env_adsr) => env_adsr.advance(inp(eval_ctx, val_store)),
+				Node::EnvAR(env_ar) => env_ar.advance(input_context!(self, eval_ctx)),
+				Node::EnvADSR(env_adsr) => env_adsr.advance(input_context!(self, eval_ctx)),
 			};
 
 			unsafe {
