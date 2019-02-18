@@ -1,10 +1,13 @@
 use node::{Input, InputContext};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum GateState { Low, RisingEdge, High, FallingEdge }
 
 #[derive(Clone, Debug)]
 pub struct Gate(Input, GateState, f32);
+
+// TODO: configurable
+const GATE_THRESHOLD: f32 = 0.05;
 
 impl Gate {
 	pub fn new(input: Input) -> Self { Gate (input, GateState::Low, 0.0) }
@@ -18,22 +21,22 @@ impl Gate {
 
 		self.1 = match self.1 {
 			Low => {
-				if diff > 0.0 { RisingEdge }
+				if input_sample > GATE_THRESHOLD { RisingEdge }
 				else { Low }
 			}
 
 			RisingEdge => {
-				if diff >= 0.0 { High }
+				if input_sample >= GATE_THRESHOLD { High }
 				else { FallingEdge }
 			}
 
 			High => {
-				if diff < 0.0 { FallingEdge }
+				if input_sample < GATE_THRESHOLD { FallingEdge }
 				else { High }
 			}
 
 			FallingEdge => {
-				if diff <= 0.0 { Low }
+				if input_sample <= GATE_THRESHOLD { Low }
 				else { RisingEdge }
 			}
 		};

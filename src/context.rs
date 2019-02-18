@@ -65,8 +65,7 @@ impl Context {
 	pub fn push_synth(&self, mut synth: Synth) -> SynthResult<u32> {
 		let mut ctx = self.shared_context.lock().unwrap();
 
-		let id = ctx.synths.len() as u32;
-		synth.id = id;
+		let id = synth.id;
 		ctx.synths.push(synth);
 		Ok(id)
 	}
@@ -90,6 +89,8 @@ impl Context {
 
 		let param = synth.get_parameter(param_id);
 		param.set_value(value);
+		// TODO: push onto event queue
+		// locking the entire context is too expensive when multiple synths are running
 	}
 
 	pub fn create_shared_buffer(&self, data: Vec<f32>) -> SynthResult<BufferID> {

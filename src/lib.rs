@@ -1,4 +1,5 @@
 #![feature(nll)]
+#![feature(integer_atomics)]
 
 // #[macro_use]
 extern crate failure;

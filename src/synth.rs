@@ -6,6 +6,11 @@ use parameter::{ParameterID, Parameter};
 use lerp;
 
 use std::f32::consts::PI;
+use std::sync::atomic;
+
+
+static SYNTH_COUNTER: atomic::AtomicU32 = atomic::AtomicU32::new(0);
+
 
 #[derive(Copy, Clone, Debug)]
 pub struct StoreID (pub(crate) u32);
@@ -45,7 +50,7 @@ macro_rules! sampler_context {
 impl Synth {
 	pub fn new() -> Self {
 		Synth {
-			id: 0,
+			id: SYNTH_COUNTER.fetch_add(1, atomic::Ordering::SeqCst),
 
 			gain: 1.0,
 			output_node: None,

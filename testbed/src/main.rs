@@ -36,16 +36,34 @@ fn main() -> SynthResult<()> {
 
 	let midi_device = midi::init_device()?;
 
-	let params = test_midi(&mut synth_context)?;
+	// let params = test_midi(&mut synth_context)?;
 	// test_lisp(&mut synth_context)?;
 	// test_sequencer(&mut synth_context)?;
 	// test_feedback(&mut synth_context)?;
 	// test_prebake(&mut synth_context)?;
 
+	let voices = [
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+		test_midi(&mut synth_context)?,
+	];
+
 	let mut audio_device = init_audio(&mut synth_context).expect("Audio init failed");
 	start_audio(&mut audio_device);
 
-	let mut prev_key = 0;
+	let mut keys_down = [0; 8];
+
+	for params in voices.iter() {
+		if let Some(param) = params.get(1) {
+			synth_context.set_parameter(*param, 0.0);
+		}
+	}
 
 	'main_loop: loop {
 		for (evt_ty, event) in EventIter {
@@ -63,10 +81,6 @@ fn main() -> SynthResult<()> {
 			}
 		}
 
-		if let Some(param) = params.get(1) {
-			synth_context.set_parameter(*param, 0.0);
-		}					
-
 		for message in midi_device.read() {
 			use midi::MidiMessage as Msg;
 
@@ -79,33 +93,39 @@ fn main() -> SynthResult<()> {
 
 			match message {
 				Msg::Control{controller, value, ..} => {
-					if let Some(param) = params.get(controller as usize + 1) {
-						let value = value as f32 / 127.0;
-						synth_context.set_parameter(*param, value);
+					for params in voices.iter() {
+						if let Some(param) = params.get(controller as usize + 1) {
+							let value = value as f32 / 127.0;
+							synth_context.set_parameter(*param, value);
+						}
 					}
 				}
 
 				Msg::NoteOn{key, velocity, ..} => {
-					if let Some(param) = params.get(0) {
-						let key = key as f32;
-						let freq = 440.0 * 2.0f32.powf((key - 64.0) / 12.0);
-						synth_context.set_parameter(*param, freq);
-					}
+					if let Some((k, voice)) = keys_down.iter_mut().zip(voices.iter()).find(|kv| *kv.0 == 0) {
+						*k = key;
 
-					let velocity = velocity as f32 / 127.0;
-					if let Some(param) = params.get(1) {
-						synth_context.set_parameter(*param, velocity);
-					}					
+						if let Some(param) = voice.get(0) {
+							let key = key as f32;
+							let freq = 440.0 * 2.0f32.powf((key - 64.0) / 12.0);
+							synth_context.set_parameter(*param, freq);
+						}
+
+						let velocity = velocity as f32 / 127.0;
+						if let Some(param) = voice.get(1) {
+							synth_context.set_parameter(*param, velocity);
+						}
+					}
 				}
 
 				Msg::NoteOff{key, ..} => {
-					let key = key as i32;
-					if key != prev_key { break }
-					prev_key = key;
+					if let Some(pos) = keys_down.iter().position(|&k| k == key) {
+						keys_down[pos] = 0;
 
-					if let Some(param) = params.get(1) {
-						synth_context.set_parameter(*param, 0.0);
-					}					
+						if let Some(param) = voices[pos].get(1) {
+							synth_context.set_parameter(*param, 0.0);
+						}	
+					}
 				}
 
 				_ => {}
@@ -215,8 +235,8 @@ fn test_midi(synth_context: &mut voi_synth::Context) -> SynthResult<Vec<Paramete
 
 	let osc = synth.new_add(osc0, osc1);
 	
-	let env = synth.new_env_ar(0.01, 1.5, velocity_param);
-	let env = synth.new_power(env, 10.0);
+	let env = synth.new_env_adsr(0.01, 0.1, 0.8, 1.0, velocity_param);
+	let env = synth.new_power(env, 2.0);
 	let out = synth.new_multiply(osc, env);
 
 	let feedback = synth.new_sub(osc, feedback_store);
