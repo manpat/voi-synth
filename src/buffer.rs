@@ -16,6 +16,10 @@ impl Buffer {
 		Buffer{ data: vec![0.0; buffer_size] }
 	}
 
+	pub fn resize(&mut self, buffer_size: usize) {
+		self.data.resize(buffer_size, 0.0);
+	}
+
 	pub fn clear(&mut self) {
 		for v in self.data.iter_mut() { *v = 0.0; }
 	}

@@ -494,7 +494,7 @@ impl<'a> ExprReader<'a> {
 	}
 
 	fn skip_whitespace(&mut self) {
-		self.input = self.input.trim_left();
+		self.input = self.input.trim_start();
 	}
 
 	fn parse_toplevel(&mut self) -> LispResult<Vec<SExpression<'a>>> {

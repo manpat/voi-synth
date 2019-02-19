@@ -1,4 +1,3 @@
-#![feature(extern_prelude)]
 #![feature(box_syntax)]
 #![feature(nll)]
 
@@ -32,7 +31,7 @@ fn main() -> SynthResult<()> {
 	std::env::set_var("RUST_BACKTRACE", "1");
 
 	let _window = Window::new().expect("Window open failed");
-	let mut synth_context = box voi_synth::Context::new();
+	let mut synth_context = box voi_synth::Context::new(3, 256)?;
 
 	let midi_device = midi::init_device()?;
 
@@ -173,7 +172,7 @@ fn init_audio(synth_context: &mut Box<voi_synth::Context>) -> SynthResult<AudioC
 	ensure!(have.format == AUDIO_F32SYS as _, "Failed to get wanted output format");
 
 	let buffer_size = have.samples as usize * have.channels as usize;
-	synth_context.init_buffer_queue(buffer_size, 3)?;
+	synth_context.set_buffer_size(buffer_size);
 	synth_context.set_sample_rate(have.freq as f32);
 
 	Ok(AudioCtx { device_id })

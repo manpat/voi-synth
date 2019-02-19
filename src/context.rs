@@ -15,10 +15,11 @@ pub struct Context {
 
 	queued_buffer_tx: SyncSender<Buffer>,
 	ready_buffer_rx: Receiver<Buffer>,
+	buffer_size: usize,
 }
 
 impl Context {
-	pub fn new() -> Self {
+	pub fn new(buffer_count: usize, buffer_size: usize) -> SynthResult<Self> {
 		let (queued_buffer_tx, queued_buffer_rx) = sync_channel::<Buffer>(16);
 		let (ready_buffer_tx, ready_buffer_rx) = sync_channel::<Buffer>(16);
 
@@ -40,12 +41,18 @@ impl Context {
 			});
 		}
 
-		Context {
+		for _ in 0..buffer_count {
+			queued_buffer_tx.send(Buffer::new(buffer_size))?;
+		}
+
+		Ok(Context {
 			shared_context,
 
 			queued_buffer_tx,
 			ready_buffer_rx,
-		}
+
+			buffer_size,
+		})
 	}
 
 	pub fn dump_stats(&self) {
@@ -81,6 +88,14 @@ impl Context {
 		ctx.evaluation_ctx.sample_rate
 	}
 
+	pub fn set_buffer_size(&mut self, buffer_size: usize) {
+		self.buffer_size = buffer_size;
+	}
+
+	pub fn get_buffer_size(&self) -> usize {
+		self.buffer_size
+	}
+
 	pub fn set_parameter(&self, param_id: ParameterID, value: f32) {
 		let mut ctx = self.shared_context.lock().unwrap();
 		let synth = ctx.synths.iter_mut()
@@ -99,19 +114,12 @@ impl Context {
 		Ok(BufferID(BufferUsageType::Shared, (ctx.evaluation_ctx.shared_buffers.len() - 1) as u16))
 	}
 
-	pub fn init_buffer_queue(&self, buffer_size: usize, buffer_count: usize) -> SynthResult<()> {
-		for _ in 0..buffer_count {
-			self.queued_buffer_tx.send(Buffer::new(buffer_size))?;
-		}
-
-		Ok(())
-	}
-
 	pub fn get_ready_buffer(&self) -> SynthResult<Buffer> {
 		Ok(self.ready_buffer_rx.recv()?)
 	}
 
-	pub fn queue_empty_buffer(&self, buffer: Buffer) -> SynthResult<()> {
+	pub fn queue_empty_buffer(&self, mut buffer: Buffer) -> SynthResult<()> {
+		buffer.resize(self.buffer_size);
 		Ok(self.queued_buffer_tx.send(buffer)?)
 	}
 }
