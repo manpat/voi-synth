@@ -1,5 +1,5 @@
 use std::thread::spawn;
-use std::sync::mpsc::{SyncSender, Receiver, sync_channel};
+use std::sync::mpsc::{SyncSender, Sender, Receiver, sync_channel, channel};
 use std::sync::{Mutex, Arc};
 use SynthResult;
 use synth::Synth;
@@ -13,6 +13,8 @@ use lerp;
 pub struct Context {
 	shared_context: Arc<Mutex<SharedContext>>,
 
+	event_tx: Sender<SynthEvent>,
+
 	queued_buffer_tx: SyncSender<Buffer>,
 	ready_buffer_rx: Receiver<Buffer>,
 	buffer_size: usize,
@@ -23,7 +25,9 @@ impl Context {
 		let (queued_buffer_tx, queued_buffer_rx) = sync_channel::<Buffer>(16);
 		let (ready_buffer_tx, ready_buffer_rx) = sync_channel::<Buffer>(16);
 
-		let shared_context = Arc::new(Mutex::new(SharedContext::new()));
+		let (event_tx, event_rx) = channel();
+
+		let shared_context = Arc::new(Mutex::new(SharedContext::new(event_rx)));
 
 		{
 			let shared_context = shared_context.clone();
@@ -47,6 +51,8 @@ impl Context {
 
 		Ok(Context {
 			shared_context,
+
+			event_tx,
 
 			queued_buffer_tx,
 			ready_buffer_rx,
@@ -86,6 +92,7 @@ impl Context {
 	pub fn get_sample_rate(&self) -> f32 {
 		let ctx = self.shared_context.lock().unwrap();
 		ctx.evaluation_ctx.sample_rate
+		// TODO: find a way to remove this
 	}
 
 	pub fn set_buffer_size(&mut self, buffer_size: usize) {
@@ -97,15 +104,7 @@ impl Context {
 	}
 
 	pub fn set_parameter(&self, param_id: ParameterID, value: f32) {
-		let mut ctx = self.shared_context.lock().unwrap();
-		let synth = ctx.synths.iter_mut()
-			.find(|s| s.id == param_id.owner)
-			.unwrap();
-
-		let param = synth.get_parameter(param_id);
-		param.set_value(value);
-		// TODO: push onto event queue
-		// locking the entire context is too expensive when multiple synths are running
+		self.event_tx.send(SynthEvent::SetParam(param_id, value)).unwrap();
 	}
 
 	pub fn create_shared_buffer(&self, data: Vec<f32>) -> SynthResult<BufferID> {
@@ -122,6 +121,15 @@ impl Context {
 		buffer.resize(self.buffer_size);
 		Ok(self.queued_buffer_tx.send(buffer)?)
 	}
+}
+
+
+enum SynthEvent {
+	SetParam(ParameterID, f32),
+	// NewSynth
+	// NewSharedBuffer
+	// SampleRateChange
+	// BufferSizeChange
 }
 
 
@@ -152,7 +160,7 @@ impl EvaluationContext {
 struct SharedContext {
 	synths: Vec<Synth>,
 	// interpolators: Vec<Interpolator>,
-	// command_rx: Reciever<SynthCommand>,
+	event_rx: Receiver<SynthEvent>,
 
 	envelope: f32,
 	signal_dc: f32,
@@ -163,11 +171,13 @@ struct SharedContext {
 }
 
 impl SharedContext {
-	fn new() -> Self {
+	fn new(event_rx: Receiver<SynthEvent>) -> Self {
 		// Init wavetables
 
 		SharedContext {
 			synths: Vec::new(),
+			event_rx,
+
 			envelope: 1000.0,
 			signal_dc: 0.0,
 
@@ -184,6 +194,20 @@ impl SharedContext {
 
 		buffer.clear();
 
+		for ev in self.event_rx.try_recv() {
+			if let SynthEvent::SetParam(param_id, value) = ev {
+				let synth = self.synths.iter_mut()
+					.find(|s| s.id == param_id.owner)
+					.unwrap();
+
+				let param = synth.get_parameter(param_id);
+				param.set_value(value);
+			}
+		}
+
+
+		// TODO: multiple evaluation contexts, push synth evals to diff threads
+		// recombine on completion
 		for synth in self.synths.iter_mut() {
 			synth.evaluate_into_buffer(buffer, &mut self.evaluation_ctx);
 		}
@@ -215,6 +239,6 @@ impl SharedContext {
 		let end = time::Instant::now();
 		let diff = (end-begin).subsec_nanos() as f32 / 1000.0;
 
-		self.average_fill_time = lerp(self.average_fill_time, diff, 0.01);
+		self.average_fill_time = lerp(self.average_fill_time, diff, 0.1);
 	}
 }

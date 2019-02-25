@@ -93,8 +93,6 @@ impl Synth {
 			eval_ctx.sample_arena.resize(self.instructions.len(), 0.0);
 		}
 
-		// TODO: Make sure instructions are evaluated in order. i.e., make sure dependencies are evaluated before terminal nodes
-
 		for s in buffer.data.iter_mut() {
 			let value = self.evaluate_sample(eval_ctx) * self.gain;
 			*s += value;

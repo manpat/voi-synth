@@ -26,6 +26,7 @@ mod midi;
 use voi_synth::*;
 use window::*;
 use lisp_frontend as lisp;
+use std::time;
 
 fn main() -> SynthResult<()> {
 	std::env::set_var("RUST_BACKTRACE", "1");
@@ -33,7 +34,20 @@ fn main() -> SynthResult<()> {
 	let _window = Window::new().expect("Window open failed");
 	let mut synth_context = box voi_synth::Context::new(3, 256)?;
 
-	let midi_device = midi::init_device()?;
+	// let midi_device = midi::init_device()?;
+
+	// let voices = [
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+	// 	test_midi(&mut synth_context)?,
+	// ];
+
 
 	// let params = test_midi(&mut synth_context)?;
 	// test_lisp(&mut synth_context)?;
@@ -42,15 +56,25 @@ fn main() -> SynthResult<()> {
 	// test_prebake(&mut synth_context)?;
 
 	let voices = [
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
 
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
-		test_midi(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
+		test_perf(&mut synth_context)?,
 	];
 
 	let mut audio_device = init_audio(&mut synth_context).expect("Audio init failed");
@@ -80,58 +104,71 @@ fn main() -> SynthResult<()> {
 			}
 		}
 
-		for message in midi_device.read() {
-			use midi::MidiMessage as Msg;
+		// for message in midi_device.read() {
+		// 	use midi::MidiMessage as Msg;
 
-			if let Msg::Packet([cmd, a, b]) = message {
-				println!("Packet {:02x} [{:02x}, {:02x}]", cmd, a, b);
+		// 	if let Msg::Packet([cmd, a, b]) = message {
+		// 		println!("Packet {:02x} [{:02x}, {:02x}]", cmd, a, b);
 
-			} else {
-				println!("{:?}", message);
-			}
+		// 	} else {
+		// 		println!("{:?}", message);
+		// 	}
 
-			match message {
-				Msg::Control{controller, value, ..} => {
-					for params in voices.iter() {
-						if let Some(param) = params.get(controller as usize + 1) {
-							let value = value as f32 / 127.0;
-							synth_context.set_parameter(*param, value);
-						}
-					}
-				}
+		// 	match message {
+		// 		Msg::Control{controller, value, ..} => {
+		// 			for params in voices.iter() {
+		// 				if let Some(param) = params.get(controller as usize + 1) {
+		// 					let value = value as f32 / 127.0;
+		// 					synth_context.set_parameter(*param, value);
+		// 				}
+		// 			}
+		// 		}
 
-				Msg::NoteOn{key, velocity, ..} => {
-					if let Some((k, voice)) = keys_down.iter_mut().zip(voices.iter()).find(|kv| *kv.0 == 0) {
-						*k = key;
+		// 		Msg::NoteOn{key, velocity, ..} => {
+		// 			if let Some((k, voice)) = keys_down.iter_mut().zip(voices.iter()).find(|kv| *kv.0 == 0) {
+		// 				*k = key;
 
-						if let Some(param) = voice.get(0) {
-							let key = key as f32;
-							let freq = 440.0 * 2.0f32.powf((key - 64.0) / 12.0);
-							synth_context.set_parameter(*param, freq);
-						}
+		// 				if let Some(param) = voice.get(0) {
+		// 					let key = key as f32;
+		// 					let freq = 440.0 * 2.0f32.powf((key - 64.0) / 12.0);
+		// 					synth_context.set_parameter(*param, freq);
+		// 				}
 
-						let velocity = velocity as f32 / 127.0;
-						if let Some(param) = voice.get(1) {
-							synth_context.set_parameter(*param, velocity);
-						}
-					}
-				}
+		// 				let velocity = velocity as f32 / 127.0;
+		// 				if let Some(param) = voice.get(1) {
+		// 					synth_context.set_parameter(*param, velocity);
+		// 				}
+		// 			}
+		// 		}
 
-				Msg::NoteOff{key, ..} => {
-					if let Some(pos) = keys_down.iter().position(|&k| k == key) {
-						keys_down[pos] = 0;
+		// 		Msg::NoteOff{key, ..} => {
+		// 			if let Some(pos) = keys_down.iter().position(|&k| k == key) {
+		// 				keys_down[pos] = 0;
 
-						if let Some(param) = voices[pos].get(1) {
-							synth_context.set_parameter(*param, 0.0);
-						}	
-					}
-				}
+		// 				if let Some(param) = voices[pos].get(1) {
+		// 					synth_context.set_parameter(*param, 0.0);
+		// 				}	
+		// 			}
+		// 		}
 
-				_ => {}
+		// 		_ => {}
+		// 	}
+		// }
+
+
+		for _ in 0..4 {
+			for v in voices.iter() {
+				synth_context.set_parameter(v[0], 110.0);
 			}
 		}
 
-		// synth_context.dump_stats();
+		let begin = time::Instant::now();
+		synth_context.dump_stats();
+		let end = time::Instant::now();
+
+		let diff = (end-begin).subsec_nanos() as f32 / 1000.0;
+
+		println!("lock time {}us", diff);
 
 		use std::thread::sleep;
 		use std::time::Duration;
@@ -205,11 +242,6 @@ fn test_midi(synth_context: &mut voi_synth::Context) -> SynthResult<Vec<Paramete
 
 	let feedback_store = synth.new_value_store();
 
-	let rate_param = synth.new_parameter();
-	let beat_rate = synth.new_remap(rate_param, 0.0, 1.0,   1.0, 8.0);
-	let pulse = synth.new_square(beat_rate);
-
-
 	let velocity_param = synth.new_parameter();
 	let freq_param = synth.new_parameter();
 	let freq = synth.new_lowpass(freq_param, 10.0);
@@ -250,10 +282,34 @@ fn test_midi(synth_context: &mut voi_synth::Context) -> SynthResult<Vec<Paramete
 		freq_param,
 		velocity_param,
 
-		rate_param,
 		mod_param,
 		feedback_param,
 	])
+}
+
+
+#[allow(dead_code)]
+fn test_perf(synth_context: &mut voi_synth::Context) -> SynthResult<Vec<ParameterID>> {
+	let mut synth = Synth::new();
+	synth.set_gain(0.3);
+
+	let freq_param = synth.new_parameter();
+	let freq = synth.new_lowpass(freq_param, 10.0);
+
+	let mut osc = synth.new_sine(freq);
+
+	for i in 0..3 {
+		let freq = synth.new_multiply(freq, 1.0 + i as f32 / 30.0);
+		let s = synth.new_sine(freq);
+		osc = synth.new_add(osc, s);
+	}
+
+	synth.set_output(osc);
+	synth.get_parameter(freq_param).set_value(440.0);
+
+	synth_context.push_synth(synth)?;
+
+	Ok(vec![freq_param])
 }
 
 
