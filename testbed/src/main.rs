@@ -228,7 +228,7 @@ unsafe extern fn audio_callback(ud: *mut std::os::raw::c_void, stream: *mut u8, 
 	let synth_context: &mut voi_synth::Context = transmute(ud);
 	let buffer = synth_context.get_ready_buffer().expect("Failed to get ready buffer");
 
-	buffer.copy_to(stream, length as usize);
+	buffer.copy_to_raw(stream, length as usize);
 	// buffer.copy_to_stereo(stream, length as usize);
 	synth_context.queue_empty_buffer(buffer).unwrap();
 }

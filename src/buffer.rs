@@ -26,12 +26,16 @@ impl Buffer {
 
 	pub fn len(&self) -> usize { self.data.len() } 
 
-	pub unsafe fn copy_to(&self, dst: *mut u8, length: usize) {
+	pub fn copy_to(&self, dst: &mut [f32]) {
+		dst.copy_from_slice(&self.data);
+	}
+
+	pub unsafe fn copy_to_raw(&self, dst: *mut u8, length_bytes: usize) {
 		use std::mem::transmute;
 		use std::ptr;
 
 		let dst = transmute(dst);
-		ptr::copy(self.data.as_ptr(), dst, self.data.len().min(length / 4));
+		ptr::copy(self.data.as_ptr(), dst, self.data.len().min(length_bytes / 4));
 	}
 
 	pub unsafe fn copy_to_stereo(&self, dst: *mut u8, length: usize) {
