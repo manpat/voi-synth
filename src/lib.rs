@@ -2,7 +2,7 @@
 #![feature(integer_atomics)]
 
 // #[macro_use]
-extern crate failure;
+pub extern crate failure;
 
 pub type SynthResult<T> = Result<T, failure::Error>;
 
@@ -15,7 +15,7 @@ mod envelope;
 mod gate;
 
 pub use context::Context;
-pub use synth::Synth;
+pub use synth::{Synth, SynthID};
 pub use node::{NodeID, NodeContainer};
 pub use parameter::ParameterID;
 pub use buffer::Buffer;

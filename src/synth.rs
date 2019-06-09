@@ -11,13 +11,15 @@ use std::sync::atomic;
 
 static SYNTH_COUNTER: atomic::AtomicU32 = atomic::AtomicU32::new(0);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SynthID (pub(crate) u32);
 
 #[derive(Copy, Clone, Debug)]
 pub struct StoreID (pub(crate) u32);
 
 #[derive(Clone, Debug)]
 pub struct Synth {
-	pub id: u32,
+	pub id: SynthID,
 
 	gain: f32,
 	output_node: Option<usize>,
@@ -50,7 +52,7 @@ macro_rules! sampler_context {
 impl Synth {
 	pub fn new() -> Self {
 		Synth {
-			id: SYNTH_COUNTER.fetch_add(1, atomic::Ordering::SeqCst),
+			id: SynthID(SYNTH_COUNTER.fetch_add(1, atomic::Ordering::SeqCst)),
 
 			gain: 1.0,
 			output_node: None,

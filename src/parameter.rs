@@ -1,8 +1,9 @@
 use context::EvaluationContext;
+use crate::synth::SynthID;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct ParameterID {
-	pub(crate) owner: u32,
+	pub(crate) owner: SynthID,
 	pub(crate) id: u32,
 }
 

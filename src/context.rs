@@ -1,14 +1,15 @@
 use std::thread::spawn;
 use std::sync::mpsc::{SyncSender, Sender, Receiver, sync_channel, channel};
 use std::sync::{Mutex, Arc};
-use SynthResult;
-use synth::Synth;
-use buffer::{Buffer, BufferID, BufferUsageType};
-use parameter::ParameterID;
+
+use crate::SynthResult;
+use crate::synth::{Synth, SynthID};
+use crate::buffer::{Buffer, BufferID, BufferUsageType};
+use crate::parameter::ParameterID;
+
+use crate::lerp;
 
 use failure::err_msg;
-
-use lerp;
 
 pub struct Context {
 	shared_context: Arc<Mutex<SharedContext>>,
@@ -75,12 +76,17 @@ impl Context {
 			ctx.signal_dc, ctx.envelope);
 	}
 
-	pub fn push_synth(&self, mut synth: Synth) -> SynthResult<u32> {
+	pub fn push_synth(&self, mut synth: Synth) -> SynthResult<SynthID> {
 		let mut ctx = self.shared_context.lock().unwrap();
 
 		let id = synth.id;
 		ctx.synths.push(synth);
 		Ok(id)
+	}
+
+	pub fn remove_synth(&self, synth_id: SynthID) {
+		let mut ctx = self.shared_context.lock().unwrap();
+		ctx.synths.retain(move |s| s.id != synth_id);
 	}
 
 	pub fn set_sample_rate(&self, sample_rate: f32) {
@@ -196,12 +202,13 @@ impl SharedContext {
 
 		for ev in self.event_rx.try_recv() {
 			if let SynthEvent::SetParam(param_id, value) = ev {
-				let synth = self.synths.iter_mut()
+				let param = self.synths.iter_mut()
 					.find(|s| s.id == param_id.owner)
-					.unwrap();
+					.map(move |s| s.get_parameter(param_id));
 
-				let param = synth.get_parameter(param_id);
-				param.set_value(value);
+				if let Some(param) = param {
+					param.set_value(value);
+				}
 			}
 		}
 
