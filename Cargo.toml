@@ -2,6 +2,7 @@
 name = "voi-synth"
 version = "0.1.0"
 authors = ["manpat <pat@patsown.com>"]
+edition = "2018"
 
 [dependencies]
 failure = "0.1.1"

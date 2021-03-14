@@ -1,9 +1,9 @@
-use buffer::{Buffer, BufferID, BufferUsageType, SamplerContext};
-use context::EvaluationContext;
-use node::{Node, NodeID, InputContext};
-use parameter::{ParameterID, Parameter};
+use crate::buffer::{Buffer, BufferID, BufferUsageType, SamplerContext};
+use crate::context::EvaluationContext;
+use crate::node::{Node, NodeID, InputContext};
+use crate::parameter::{ParameterID, Parameter};
 
-use lerp;
+use crate::lerp;
 
 use std::f32::consts::PI;
 use std::sync::atomic;
@@ -52,7 +52,7 @@ macro_rules! sampler_context {
 impl Synth {
 	pub fn new() -> Self {
 		Synth {
-			id: SynthID(SYNTH_COUNTER.fetch_add(1, atomic::Ordering::SeqCst)),
+			id: SynthID(SYNTH_COUNTER.fetch_add(1, atomic::Ordering::Relaxed)),
 
 			gain: 1.0,
 			output_node: None,

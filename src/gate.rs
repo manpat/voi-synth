@@ -1,4 +1,4 @@
-use node::{Input, InputContext};
+use crate::node::{Input, InputContext};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum GateState { Low, RisingEdge, High, FallingEdge }

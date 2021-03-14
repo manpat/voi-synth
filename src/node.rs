@@ -1,10 +1,10 @@
-use synth::{Synth, StoreID};
-use buffer::{BufferID, BufferSampler, Sequencer};
-use context::EvaluationContext;
-use parameter::{ParameterID, Parameter, ParameterSampler, SampleMode as ParamSampleMode};
-use gate::Gate;
+use crate::synth::{Synth, StoreID};
+use crate::buffer::{BufferID, BufferSampler, Sequencer};
+use crate::context::EvaluationContext;
+use crate::parameter::{ParameterID, Parameter, ParameterSampler, SampleMode as ParamSampleMode};
+use crate::gate::Gate;
 
-use envelope as env;
+use crate::envelope as env;
 
 use std::f32::consts::PI;
 

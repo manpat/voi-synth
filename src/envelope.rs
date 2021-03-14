@@ -1,5 +1,5 @@
-use node::{Input, InputContext};
-use gate::{Gate, GateState};
+use crate::node::{Input, InputContext};
+use crate::gate::{Gate, GateState};
 
 #[derive(Copy, Clone, Debug)]
 enum State {
